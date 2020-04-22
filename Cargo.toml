@@ -1,0 +1,8 @@
+[package]
+name = "chess"
+version = "0.1.0"
+authors = ["Joba <jonas+git@joba.me>"]
+edition = "2018"
+
+[dependencies]
+itertools = "0.9.0"
