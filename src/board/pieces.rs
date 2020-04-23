@@ -406,7 +406,6 @@ impl<'a> Iterator for PawnIterator<'a> {
                 _ => return None,
             };
         }
-        None
     }
 }
 

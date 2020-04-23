@@ -13,6 +13,7 @@ pub mod board {
     use crate::board::board::PieceType::QUEEN;
     use std::path::Iter;
     use crate::board::board::Color::{BLACK, WHITE};
+    use itertools::Itertools;
 
     type BoardIndex = u8;
     pub const RANK_SIZE: BoardIndex = 8;
@@ -212,40 +213,51 @@ pub mod board {
                     .filter(|m| m.to == self.to)
                     .filter(|m| m.from != self.from)
                     .filter(|m| board.get_piece(&m.from).unwrap().piece_type == piece.piece_type)
-                    .fold((true, true), |acc, m| {
+                    .fold((true, true, true), |acc, m| {
+                        println!("{:?}", m);
                         let Square(f, r) = m.from;
                         if f == self.from.0 {
-                            (false, acc.1)
+                            (false, acc.1, false)
                         }
                         else if r == self.from.1 {
-                            (acc.0, false)
+                            (acc.0, false, false)
                         }
                         else {
-                            acc
+                            (acc.0, acc.1, false)
                         }
                     });
 
                 if &capture_string == "x" {
                     if piece.piece_type == PieceType::PAWN {
-                        ambi = (false, true);
+                        ambi = (false, true, false);
                     }
                 }
 
                 let disambiguation = match ambi {
-                    (true, true) => "".to_string(),
-                    (true, false) => self.from.1.to_string(),
-                    (false, true) => self.from.0.to_string(),
-                    (false, false) => self.from.to_string()
+                    (true, true, true) => "".to_string(),
+                    (true, true, false) => self.from.0.to_string(),
+                    (true, false, _) => self.from.1.to_string(),
+                    (false, true, _) => self.from.0.to_string(),
+                    (false, false, _) => self.from.to_string()
                 };
 
                 let promo_string = if let Move{from: _, to: _, move_type: MoveAction::Promotion(p, Some(_))} = self {
                     let c: char = Piece::into(*p);
-                    c.to_string()
+                    c.to_string().to_ascii_uppercase()
                 } else {
                     "".to_string()
                 };
 
                 Some([piece_str, disambiguation, capture_string, dest_sqr, promo_string].concat())
+            }
+
+            fn bounds_check(r: u8, f: u8) -> bool {
+                f < 0 || r < 0 || f >= 8 || r >= 8
+            }
+
+            fn bounds_check_sqr(sqr: &Square) -> bool {
+                let &Square(File(f), Rank(r)) = sqr;
+                Move::bounds_check(r, f)
             }
 
             pub fn new(board: &Board, from: &Square, to: &Square) -> Move {
@@ -266,7 +278,9 @@ pub mod board {
                         //Castle
                         if from_piece.piece_type == PieceType::KING {
                             let castle_options = Move::current_castle_options(board);
-
+//                            println!("{:?}", castle_options);
+//                            println!("{:?}", board.active_player);
+//                            println!("{:?}", board.castling_options_black);
                             match castle_options {
                                 (Some(castle_sqr), _) => {
                                     if *to == castle_sqr {
@@ -297,7 +311,7 @@ pub mod board {
             fn current_castle_options(board: &Board) -> (Option<Square>, Option<Square>) {
                 let (options, (s1, s2)) = match board.active_player {
                     Color::WHITE => (board.castling_options_white, CASTLING_SQUARES_WHITE),
-                    Color::BLACK => (board.castling_options_white, CASTLING_SQUARES_BLACK)
+                    Color::BLACK => (board.castling_options_black, CASTLING_SQUARES_BLACK)
                 };
                 match options {
                     (true, true) => (Some(s1), Some(s2)),
@@ -392,7 +406,7 @@ pub mod board {
     }
 
     impl Color {
-        fn next(&self) -> Color {
+        pub fn next(&self) -> Color {
             match self {
                 WHITE => BLACK,
                 BLACK => WHITE,
@@ -503,13 +517,7 @@ pub mod board {
         pub en_passant_square: Option<Square>,
         pub halfmove_clock: u32,
         pub fullmove: u32,
-        kings: (Square, Square),
-    }
-
-    pub struct MoveChangeSet {
-        en_passant_square: Option<Square>,
-        halfmove_clock: u32,
-        castling_options: ((bool, bool), (bool, bool))
+        pub kings: (Square, Square),
     }
 
     pub struct CheckCheckingIterator(Iterator<Item=Move>);
@@ -538,35 +546,35 @@ pub mod board {
             previous
         }
 
-        pub fn do_move(&mut self, piece_move: &Move) -> MoveChangeSet {
-            let change_set = MoveChangeSet{halfmove_clock: self.halfmove_clock, en_passant_square: self.en_passant_square, castling_options: (self.castling_options_white, self.castling_options_black)};
-            self.en_passant_square = None;
-            self.halfmove_clock += 1;
+        pub fn do_move(&self, piece_move: &Move) -> Board {
+            let mut new = self.clone();
+            new.en_passant_square = None;
+            new.halfmove_clock += 1;
 
             //Remove castling ability
-            if let Some(Piece{color: color, piece_type: PieceType::KING}) = self.get_piece(&piece_move.from) {
+            if let Some(Piece{color: color, piece_type: PieceType::KING}) = new.get_piece(&piece_move.from) {
                 match color {
-                    Color::WHITE => self.castling_options_white = (false, false),
-                    Color::BLACK => self.castling_options_black = (false, false)
+                    Color::WHITE => new.castling_options_white = (false, false),
+                    Color::BLACK => new.castling_options_black = (false, false)
                 }
             }
 
-            if let Some(Piece{color: color, piece_type: PieceType::ROOK}) = self.get_piece(&piece_move.from) {
+            if let Some(Piece{color: color, piece_type: PieceType::ROOK}) = new.get_piece(&piece_move.from) {
                 match color {
                     Color::WHITE => {
                         if piece_move.from == CASTLING_SQUARES_WHITE.0 {
-                            self.castling_options_white = (false, self.castling_options_white.1)
+                            new.castling_options_white = (false, new.castling_options_white.1)
                         }
                         else if piece_move.from == CASTLING_SQUARES_WHITE.1 {
-                            self.castling_options_white = (self.castling_options_white.0, false)
+                            new.castling_options_white = (new.castling_options_white.0, false)
                         }
                     },
                     Color::BLACK => {
                         if piece_move.from == CASTLING_SQUARES_BLACK.0 {
-                            self.castling_options_black = (false, self.castling_options_black.1)
+                            new.castling_options_black = (false, new.castling_options_black.1)
                         }
                         else if piece_move.from == CASTLING_SQUARES_BLACK.1 {
-                            self.castling_options_black = (self.castling_options_black.0, false)
+                            new.castling_options_black = (new.castling_options_black.0, false)
                         }
                     }
                 }
@@ -575,90 +583,56 @@ pub mod board {
             //Execute move
             match piece_move {
                 Move{from: from, to: to, move_type: MoveAction::Normal } => {
-                    self.move_piece(from, to);
-                    if let Some(Piece{color: _, piece_type: PieceType::PAWN}) = self.get_piece(to) {
-                        self.halfmove_clock = 0;
+                    new.move_piece(from, to);
+                    if let Some(Piece{color: _, piece_type: PieceType::PAWN}) = new.get_piece(to) {
+                        new.halfmove_clock = 0;
                         let &Square(file, Rank(r1)) = from;
                         let &Square(_, Rank(r2)) = to;
                         let diff = (r1 as i8 - r2 as i8);
                         if diff.abs() == 2 {
                             let dr = (r2 as i8) - (r1 as i8);
-                            self.en_passant_square = Some(Square(file, Rank((r1 as i8 - diff / 2) as u8)))
+                            new.en_passant_square = Some(Square(file, Rank((r1 as i8 - diff / 2) as u8)))
                         }
                     }
-                    if let Some(Piece{color: color, piece_type: PieceType::KING}) = self.get_piece(to) {
-                        self.kings = match color {
-                            Color::WHITE => (*to, self.kings.1),
-                            Color::BLACK => (self.kings.0, *to),
+                    if let Some(Piece{color: color, piece_type: PieceType::KING}) = new.get_piece(to) {
+                        new.kings = match color {
+                            Color::WHITE => (*to, new.kings.1),
+                            Color::BLACK => (new.kings.0, *to),
                         }
                     }
                 },
                 Move{from: from, to: to, move_type: MoveAction::Capture(_, square)} => {
-                    self.halfmove_clock = 0;
-                    self.set_piece(square, None);
-                    self.move_piece(from, to);
+                    new.halfmove_clock = 0;
+                    new.set_piece(square, None);
+                    new.move_piece(from, to);
+                    if let Some(Piece{color: color, piece_type: PieceType::KING}) = new.get_piece(to) {
+                        new.kings = match color {
+                            Color::WHITE => (*to, new.kings.1),
+                            Color::BLACK => (new.kings.0, *to),
+                        }
+                    }
                 },
                 Move{from: from, to: to, move_type: MoveAction::Promotion(piece, some)} => {
-                    self.halfmove_clock = 0;
-                    self.set_piece(from, None);
-                    self.set_piece(to, Some(*piece));
+                    new.halfmove_clock = 0;
+                    new.set_piece(from, None);
+                    new.set_piece(to, Some(*piece));
                 },
                 Move{from: from, to: to, move_type: MoveAction::Castle(castle_from)} => {
-                    self.move_piece(from, to);
+                    new.move_piece(from, to);
                     let &Square(File(f1), Rank(r1)) = from;
                     let &Square(File(f2), Rank(r2)) = to;
                     let df = (f2 as i8) - (f1 as i8);
                     let dr = (r2 as i8) - (r1 as i8);
                     let castle_to = Square(File((f2 as i8 + df.signum()) as BoardIndex), Rank((r2 as i8 + dr.signum()) as BoardIndex));
-                    self.move_piece(castle_from, &castle_to);
+                    new.move_piece(castle_from, &castle_to);
                 },
                 _ => unreachable!()
             };
-            if self.active_player == Color::BLACK {
-                self.fullmove += 1;
+            if new.active_player == Color::BLACK {
+                new.fullmove += 1;
             }
-            self.active_player = self.active_player.next();
-            change_set
-        }
-
-        pub fn undo_move(&mut self, piece_move: &Move, change_set: &MoveChangeSet) {
-            self.en_passant_square = change_set.en_passant_square;
-            self.halfmove_clock = change_set.halfmove_clock;
-            self.castling_options_white = change_set.castling_options.0;
-            self.castling_options_black = change_set.castling_options.1;
-            if let Some(Piece{color: color, piece_type: PieceType::KING}) = self.get_piece(&piece_move.to) {
-                self.kings = match color {
-                    Color::WHITE => (*&piece_move.from, self.kings.1),
-                    Color::BLACK => (self.kings.0, *&piece_move.from),
-                }
-            }
-            match piece_move {
-                Move{from, to, move_type: MoveAction::Normal } => {
-                    self.move_piece(to, from);
-                },
-                Move{from, to, move_type: MoveAction::Capture(piece, square)} => {
-                    self.move_piece(to, from);
-                    self.set_piece(square, Some(*piece));
-                },
-                Move{from, to, move_type: MoveAction::Promotion(piece, captured)} => {
-                    self.set_piece(from, Some(Piece{piece_type: PieceType::PAWN, color: piece.color}));
-                    self.set_piece(to, *captured);
-                },
-                Move{from, to, move_type: MoveAction::Castle(castle_from)} => {
-                    self.move_piece(to, from);
-                    let &Square(File(f1), Rank(r1)) = from;
-                    let &Square(File(f2), Rank(r2)) = to;
-                    let df = (f2 as i8) - (f1 as i8);
-                    let dr = (r2 as i8) - (r1 as i8);
-                    let castle_to = Square(File((f2 as i8 + df.signum()) as BoardIndex), Rank((r2 as i8 + dr.signum()) as BoardIndex));
-                    self.move_piece(&castle_to, castle_from);
-                },
-                _ => unreachable!()
-            };
-            self.active_player = self.active_player.next();
-            if self.active_player == Color::BLACK {
-                self.fullmove -= 1;
-            }
+            new.active_player = new.active_player.next();
+            new
         }
 
         fn all_available_moves_unchecked(&self, piece_color: Color) -> impl Iterator<Item=Move> + '_{
@@ -679,22 +653,21 @@ pub mod board {
         }
 
         pub fn all_available_moves<'a>(&'a self) -> impl Iterator<Item=Move> + 'a {
-            let mut self_mut = self.clone();
             self.all_available_moves_unchecked(self.active_player)
                 .filter( move |m| {
-                    let change_set = self_mut.do_move(m);
-                    let check = self_mut.is_check();
-                    self_mut.undo_move(m, &change_set);
+                    let temp = self.do_move(m);
+                    let check = temp.is_in_check(&self.active_player);
                     !check
                 })
         }
 
-        fn is_check(&mut self) -> bool {
-            let king_square = match self.active_player {
-                Color::WHITE => self.kings.1,
-                Color::BLACK => self.kings.0
+        pub fn is_in_check(&self, color: &Color) -> bool {
+            let king_square = match color {
+                Color::WHITE => self.kings.0,
+                Color::BLACK => self.kings.1
             };
-            self.all_available_moves_unchecked(self.active_player)
+
+            self.all_available_moves_unchecked(color.next())
                 .any(|m| m.to == king_square)
         }
 
@@ -706,12 +679,12 @@ pub mod board {
             };
 
             match piece.piece_type {
-                PieceType::KING => KingIterator::new(sqr, self, self.active_player),
-                PieceType::BISHOP => BishopIterator::new(sqr, self, self.active_player),
-                PieceType::KNIGHT => KnightIterator::new(sqr, self, self.active_player),
-                PieceType::ROOK => RookIterator::new(sqr, self, self.active_player),
-                PieceType::QUEEN => QueenIterator::new(sqr, self, self.active_player),
-                PieceType::PAWN => PawnIterator::new(sqr, self, self.active_player),
+                PieceType::KING => KingIterator::new(sqr, self, piece.color),
+                PieceType::BISHOP => BishopIterator::new(sqr, self, piece.color),
+                PieceType::KNIGHT => KnightIterator::new(sqr, self, piece.color),
+                PieceType::ROOK => RookIterator::new(sqr, self, piece.color),
+                PieceType::QUEEN => QueenIterator::new(sqr, self, piece.color),
+                PieceType::PAWN => PawnIterator::new(sqr, self, piece.color),
             }
         }
 
@@ -855,4 +828,21 @@ pub mod board {
             Some(pieces)
         }
     }
+}
+
+#[cfg(test)]
+mod check_test {
+    use crate::board::board::{Board, PieceType};
+    use crate::board::board::Color;
+    use crate::board::pieces::PawnIterator;
+    use crate::board::board::positional::{Square, Move};
+    use crate::board::board::positional::MoveAction::Promotion;
+
+    #[test]
+    fn a() {
+        let board = Board::from_fen("4k3/8/8/1p4pp/8/4q3/1K5q/8 w - - 18 141".to_string()).unwrap();
+        assert!(board.is_in_check(&Color::WHITE));
+        assert!(!board.is_in_check(&Color::BLACK));
+    }
+
 }
