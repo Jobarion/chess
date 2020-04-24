@@ -552,14 +552,14 @@ pub mod board {
             new.halfmove_clock += 1;
 
             //Remove castling ability
-            if let Some(Piece{color: color, piece_type: PieceType::KING}) = new.get_piece(&piece_move.from) {
+            if let Some(Piece{color, piece_type: PieceType::KING}) = new.get_piece(&piece_move.from) {
                 match color {
                     Color::WHITE => new.castling_options_white = (false, false),
                     Color::BLACK => new.castling_options_black = (false, false)
                 }
             }
 
-            if let Some(Piece{color: color, piece_type: PieceType::ROOK}) = new.get_piece(&piece_move.from) {
+            if let Some(Piece{color, piece_type: PieceType::ROOK}) = new.get_piece(&piece_move.from) {
                 match color {
                     Color::WHITE => {
                         if piece_move.from == CASTLING_SQUARES_WHITE.0 {
@@ -582,7 +582,7 @@ pub mod board {
 
             //Execute move
             match piece_move {
-                Move{from: from, to: to, move_type: MoveAction::Normal } => {
+                Move{from, to, move_type: MoveAction::Normal } => {
                     new.move_piece(from, to);
                     if let Some(Piece{color: _, piece_type: PieceType::PAWN}) = new.get_piece(to) {
                         new.halfmove_clock = 0;
@@ -594,30 +594,30 @@ pub mod board {
                             new.en_passant_square = Some(Square(file, Rank((r1 as i8 - diff / 2) as u8)))
                         }
                     }
-                    if let Some(Piece{color: color, piece_type: PieceType::KING}) = new.get_piece(to) {
+                    if let Some(Piece{color, piece_type: PieceType::KING}) = new.get_piece(to) {
                         new.kings = match color {
                             Color::WHITE => (*to, new.kings.1),
                             Color::BLACK => (new.kings.0, *to),
                         }
                     }
                 },
-                Move{from: from, to: to, move_type: MoveAction::Capture(_, square)} => {
+                Move{from, to, move_type: MoveAction::Capture(_, square)} => {
                     new.halfmove_clock = 0;
                     new.set_piece(square, None);
                     new.move_piece(from, to);
-                    if let Some(Piece{color: color, piece_type: PieceType::KING}) = new.get_piece(to) {
+                    if let Some(Piece{color, piece_type: PieceType::KING}) = new.get_piece(to) {
                         new.kings = match color {
                             Color::WHITE => (*to, new.kings.1),
                             Color::BLACK => (new.kings.0, *to),
                         }
                     }
                 },
-                Move{from: from, to: to, move_type: MoveAction::Promotion(piece, some)} => {
+                Move{from, to, move_type: MoveAction::Promotion(piece, some)} => {
                     new.halfmove_clock = 0;
                     new.set_piece(from, None);
                     new.set_piece(to, Some(*piece));
                 },
-                Move{from: from, to: to, move_type: MoveAction::Castle(castle_from)} => {
+                Move{from, to, move_type: MoveAction::Castle(castle_from)} => {
                     new.move_piece(from, to);
                     let &Square(File(f1), Rank(r1)) = from;
                     let &Square(File(f2), Rank(r2)) = to;

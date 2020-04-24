@@ -13,19 +13,12 @@ static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 mod board;
 
-
 fn main() {
-    let mut board = Board::from_fen("8/1B3p2/5p2/8/P1NP1P2/3kP3/3b2R1/2R3K1 w - - 1 41".to_string()).unwrap();
+    let mut board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()).unwrap();
 
-//    let mut board = Board::from_fen("4k3/8/8/1p4pp/8/4q3/7q/K7 b - - 19 141".to_string()).unwrap();
-//    let b2 = board.do_move(&Move::new(&board, &square("e3"), &square("e1")));
-    let evaluator = MiniMaxEvaluator::new(4);
-//    board.all_available_moves().for_each(|m| {
-//        let b = board.do_move(&m);
-//        println!("{} {}", m.to_algebraic(&board).unwrap(), evaluator.evaluate_board(&b));
-//    });
+
+    let evaluator = MiniMaxEvaluator::new(7);
     let mut pgn = "".to_string();
-//    println!("{}", board);
     for i in 0..1 {
         let start = SystemTime::now();
         let MoveSuggestion(eval, m_opt) = evaluator.find_move(&board);
@@ -33,8 +26,7 @@ fn main() {
             println!("Game over. {:?}", eval);
             break;
         }
-//        let eval2 = evaluator.evaluate_board(&b2);
-//        println!("{} {} {:?}", eval, eval2, eval.cmp(&eval2));
+
         let m = m_opt.unwrap();
         let since_the_epoch = SystemTime::now().duration_since(start)
             .expect("Time went backwards");

@@ -5,8 +5,12 @@ use std::cmp::Ordering;
 use std::fmt::{Display, Formatter, Error};
 use self::rand::Rng;
 use crate::CALL_COUNT;
+use crate::board::board::Color::BLACK;
 
 extern crate rand;
+
+const MIN_EVAL: EvalResult = EvalResult::Winner(Color::BLACK, 0);
+const MAX_EVAL: EvalResult = EvalResult::Winner(Color::WHITE, 0);
 
 pub trait Evaluator {
     fn evaluate_board(&self, board: &Board) -> EvalResult;
@@ -79,94 +83,98 @@ impl MiniMaxEvaluator {
         MiniMaxEvaluator{max_depth, evaluator: MaterialEvaluator}
     }
 
-    fn eval_min(&self, depth: u8, board: &Board, alpha: &EvalResult, beta: &EvalResult) -> MoveSuggestion {
+    fn eval_min(&self, depth: u8, board: &Board, alpha: EvalResult, mut beta: EvalResult) -> MoveSuggestion {
         if board.halfmove_clock >= 50 {
             return MoveSuggestion(Stalemate, None);
         }
-        let alpha_mut = alpha.clone();
-        let mut  beta_mut = beta.clone();
-        board.all_available_moves()
-            .map(|m| {
-                if depth <= 1 {
-                    let eval = self.evaluator.evaluate_board(&board.do_move(&m));
-                    match eval {
-                        Estimate(val) => MoveSuggestion(Estimate(val), Some(m)),
-                        Stalemate => MoveSuggestion(Stalemate, None),
-                        Winner(c, 0) => MoveSuggestion(Winner(c, 0), None),
-                        Winner(c, val) => MoveSuggestion(Winner(c, val), Some(m))
-                    }
+        let mut min_eval= MAX_EVAL;
+        let mut min_suggestion = None;
+        for m in board.all_available_moves() {
+            let MoveSuggestion(eval, move_opt) = if depth <= 1 {
+                let eval = self.evaluator.evaluate_board(&board.do_move(&m));
+                match eval {
+                    Estimate(val) => MoveSuggestion(Estimate(val), Some(m)),
+                    Stalemate => MoveSuggestion(Stalemate, None),
+                    Winner(c, 0) => MoveSuggestion(Winner(c, 0), None),
+                    Winner(c, val) => MoveSuggestion(Winner(c, val), Some(m))
                 }
-                else {
-                    match self.eval_max(depth - 1, &board.do_move(&m), &alpha, &beta) {
-                        MoveSuggestion(Estimate(eval), _) => MoveSuggestion(Estimate(eval), Some(m)),
-                        MoveSuggestion(Winner(color, moves), _) => MoveSuggestion(Winner(color, moves + 1), Some(m)),
-                        MoveSuggestion(Stalemate, _) => MoveSuggestion(Stalemate, Some(m)),
-                    }
+            }
+            else {
+                match self.eval_max(depth - 1, &board.do_move(&m), alpha, beta) {
+                    MoveSuggestion(Estimate(eval), _) => MoveSuggestion(Estimate(eval), Some(m)),
+                    MoveSuggestion(Winner(color, moves), _) => MoveSuggestion(Winner(color, moves + 1), Some(m)),
+                    MoveSuggestion(Stalemate, _) => MoveSuggestion(Stalemate, Some(m)),
                 }
-            })
-            .take_while(|ms| {
-                let MoveSuggestion(eval, m) = ms;
-                beta_mut = beta_mut.min(*eval);
-                alpha_mut < beta_mut
-            })
-            .min_by(|a, b| (&a.0).cmp(&b.0))
-            .unwrap_or_else(|| {
-                if board.is_in_check(&board.active_player) {
-                    MoveSuggestion(Winner(board.active_player.next(), 0), None)
-                }
-                else {
-                    MoveSuggestion(Stalemate, None)
-                }
-            })
+            };
+            if eval < min_eval {
+                min_eval = eval;
+                min_suggestion = Some(MoveSuggestion(eval, move_opt));
+            }
+            beta = beta.min(eval);
+            if alpha >= beta {
+                break;
+            }
+        }
+
+        min_suggestion.unwrap_or_else(|| {
+            if board.is_in_check(&board.active_player) {
+                MoveSuggestion(Winner(board.active_player.next(), 0), None)
+            }
+            else {
+                MoveSuggestion(Stalemate, None)
+            }
+        })
     }
 
-    fn eval_max(&self, depth: u8, board: &Board, alpha: &EvalResult, beta: &EvalResult) -> MoveSuggestion {
+    fn eval_max(&self, depth: u8, board: &Board, mut alpha: EvalResult, beta: EvalResult) -> MoveSuggestion {
         if board.halfmove_clock >= 50 {
             return MoveSuggestion(Stalemate, None);
         }
-        let mut alpha_mut = alpha.clone();
-        let  beta_mut = beta.clone();
-        board.all_available_moves()
-            .map(|m| {
-                if depth <= 1 {
-                    let eval = self.evaluator.evaluate_board(&board.do_move(&m));
-                    match eval {
-                        Estimate(val) => MoveSuggestion(Estimate(val), Some(m)),
-                        Stalemate => MoveSuggestion(Stalemate, None),
-                        Winner(c, 0) => MoveSuggestion(Winner(c, 0), None),
-                        Winner(c, val) => MoveSuggestion(Winner(c, val), Some(m))
-                    }
+        let mut max_eval = MIN_EVAL;
+        let mut max_suggestion = None;
+        for m in board.all_available_moves() {
+            let MoveSuggestion(eval, move_opt) = if depth <= 1 {
+                let eval = self.evaluator.evaluate_board(&board.do_move(&m));
+                match eval {
+                    Estimate(val) => MoveSuggestion(Estimate(val), Some(m)),
+                    Stalemate => MoveSuggestion(Stalemate, None),
+                    Winner(c, 0) => MoveSuggestion(Winner(c, 0), None),
+                    Winner(c, val) => MoveSuggestion(Winner(c, val), Some(m))
                 }
-                else {
-                    match self.eval_min(depth - 1, &board.do_move(&m), &alpha, &beta) {
-                        MoveSuggestion(Estimate(eval), _) => MoveSuggestion(Estimate(eval), Some(m)),
-                        MoveSuggestion(Winner(color, moves), _) => MoveSuggestion(Winner(color, moves + 1), Some(m)),
-                        MoveSuggestion(Stalemate, _) => MoveSuggestion(Stalemate, Some(m)),
-                    }
+            }
+            else {
+                match self.eval_min(depth - 1, &board.do_move(&m), alpha, beta) {
+                    MoveSuggestion(Estimate(eval), _) => MoveSuggestion(Estimate(eval), Some(m)),
+                    MoveSuggestion(Winner(color, moves), _) => MoveSuggestion(Winner(color, moves + 1), Some(m)),
+                    MoveSuggestion(Stalemate, _) => MoveSuggestion(Stalemate, Some(m)),
                 }
-            })
-            .take_while(|ms| {
-                let MoveSuggestion(eval, m) = ms;
-                alpha_mut = alpha_mut.max(*eval);
-                alpha_mut < beta_mut
-            })
-            .max_by(|a, b| (&a.0).cmp(&b.0))
-            .unwrap_or_else(|| {
-                if board.is_in_check(&board.active_player) {
-                    MoveSuggestion(Winner(board.active_player.next(), 0), None)
-                }
-                else {
-                    MoveSuggestion(Stalemate, None)
-                }
-            })
+            };
+            if eval > max_eval  {
+                max_eval  = eval;
+                max_suggestion = Some(MoveSuggestion(eval, move_opt));
+            }
+            alpha = alpha.max(eval);
+            if alpha >= beta {
+                break;
+            }
+        }
+
+        max_suggestion.unwrap_or_else(|| {
+            if board.is_in_check(&board.active_player) {
+                MoveSuggestion(Winner(board.active_player.next(), 0), None)
+            }
+            else {
+                MoveSuggestion(Stalemate, None)
+            }
+        })
     }
 }
 
 impl MoveFinder for MiniMaxEvaluator {
     fn find_move(&self, board: &Board) -> MoveSuggestion {
         match board.active_player {
-            Color::WHITE => self.eval_max(self.max_depth, board, &EvalResult::Winner(Color::BLACK, 0), &EvalResult::Winner(Color::WHITE, 0)),
-            Color::BLACK => self.eval_min(self.max_depth, board, &EvalResult::Winner(Color::BLACK, 0), &EvalResult::Winner(Color::WHITE, 0)),
+            Color::WHITE => self.eval_max(self.max_depth, board, EvalResult::Winner(Color::BLACK, 0), EvalResult::Winner(Color::WHITE, 0)),
+            Color::BLACK => self.eval_min(self.max_depth, board, EvalResult::Winner(Color::BLACK, 0), EvalResult::Winner(Color::WHITE, 0)),
         }
     }
 }
