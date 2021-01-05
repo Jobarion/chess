@@ -33,7 +33,7 @@ pub mod board {
         #[derive(Copy, Clone, Debug, PartialEq)]
         pub struct Square(pub File, pub Rank);
 
-        #[derive(Debug)]
+        #[derive(Debug, Copy, Clone)]
         pub enum MoveAction {
             Normal,
             Capture(Piece, Square),
@@ -41,7 +41,7 @@ pub mod board {
             Castle(Square)
         }
 
-        #[derive(Debug)]
+        #[derive(Debug, Copy, Clone)]
         pub struct Move {
             pub from: Square,
             pub to: Square,
@@ -278,9 +278,6 @@ pub mod board {
                         //Castle
                         if from_piece.piece_type == PieceType::KING {
                             let castle_options = Move::current_castle_options(board);
-//                            println!("{:?}", castle_options);
-//                            println!("{:?}", board.active_player);
-//                            println!("{:?}", board.castling_options_black);
                             match castle_options {
                                 (Some(castle_sqr), _) => {
                                     if *to == castle_sqr {

@@ -4,8 +4,9 @@ use crate::board::evaluator::EvalResult::{Estimate, Winner, Stalemate};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter, Error};
 use self::rand::Rng;
-use crate::CALL_COUNT;
 use crate::board::board::Color::BLACK;
+use std::ops::Neg;
+use std::sync::{Arc, Mutex};
 
 extern crate rand;
 
@@ -20,9 +21,14 @@ pub trait MoveFinder {
     fn find_move(&self, board: &Board) -> MoveSuggestion;
 }
 
+pub struct Stats {
+    pub evaluated_positions: u128,
+    pub best_move: Option<MoveSuggestion>
+}
+
 pub struct MiniMaxEvaluator {
     max_depth: u8,
-    evaluator: MaterialEvaluator,
+    pub(crate) stats: Arc<Mutex<Stats>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -74,13 +80,32 @@ impl Ord for EvalResult {
     }
 }
 
-#[derive(Debug)]
+impl Neg for EvalResult {
+    type Output = EvalResult;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Estimate(f) => Estimate(-f),
+            Winner(color, moves) => Winner(color.next(), moves),
+            Stalemate => Stalemate,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct MoveSuggestion(pub EvalResult, pub Option<Move>);
 
 impl MiniMaxEvaluator {
 
     pub(crate) fn new(max_depth: u8) -> MiniMaxEvaluator {
-        MiniMaxEvaluator{max_depth, evaluator: MaterialEvaluator}
+        MiniMaxEvaluator{max_depth, stats: Arc::new(Mutex::new(Stats { evaluated_positions: 0, best_move: None })) }
+    }
+
+    pub fn reset_stats(&self) {
+        let stats = Arc::clone(&self.stats);
+        let mut stats = stats.lock().unwrap();
+        (*stats).evaluated_positions = 0;
+        (*stats).best_move = None;
     }
 
     fn eval_min(&self, depth: u8, board: &Board, alpha: EvalResult, mut beta: EvalResult) -> MoveSuggestion {
@@ -91,7 +116,7 @@ impl MiniMaxEvaluator {
         let mut min_suggestion = None;
         for m in board.all_available_moves() {
             let MoveSuggestion(eval, move_opt) = if depth <= 1 {
-                let eval = self.evaluator.evaluate_board(&board.do_move(&m));
+                let eval = self.eval_position(&board.do_move(&m));
                 match eval {
                     Estimate(val) => MoveSuggestion(Estimate(val), Some(m)),
                     Stalemate => MoveSuggestion(Stalemate, None),
@@ -109,6 +134,11 @@ impl MiniMaxEvaluator {
             if eval < min_eval {
                 min_eval = eval;
                 min_suggestion = Some(MoveSuggestion(eval, move_opt));
+                if depth == self.max_depth {
+                    let stats = Arc::clone(&self.stats);
+                    let mut stats = stats.lock().unwrap();
+                    (*stats).best_move = min_suggestion.clone();
+                }
             }
             beta = beta.min(eval);
             if alpha >= beta {
@@ -134,7 +164,7 @@ impl MiniMaxEvaluator {
         let mut max_suggestion = None;
         for m in board.all_available_moves() {
             let MoveSuggestion(eval, move_opt) = if depth <= 1 {
-                let eval = self.evaluator.evaluate_board(&board.do_move(&m));
+                let eval = self.eval_position(&board.do_move(&m));
                 match eval {
                     Estimate(val) => MoveSuggestion(Estimate(val), Some(m)),
                     Stalemate => MoveSuggestion(Stalemate, None),
@@ -152,6 +182,11 @@ impl MiniMaxEvaluator {
             if eval > max_eval  {
                 max_eval  = eval;
                 max_suggestion = Some(MoveSuggestion(eval, move_opt));
+                if depth == self.max_depth {
+                    let stats = Arc::clone(&self.stats);
+                    let mut stats = stats.lock().unwrap();
+                    (*stats).best_move = max_suggestion.clone();
+                }
             }
             alpha = alpha.max(eval);
             if alpha >= beta {
@@ -168,30 +203,11 @@ impl MiniMaxEvaluator {
             }
         })
     }
-}
 
-impl MoveFinder for MiniMaxEvaluator {
-    fn find_move(&self, board: &Board) -> MoveSuggestion {
-        match board.active_player {
-            Color::WHITE => self.eval_max(self.max_depth, board, EvalResult::Winner(Color::BLACK, 0), EvalResult::Winner(Color::WHITE, 0)),
-            Color::BLACK => self.eval_min(self.max_depth, board, EvalResult::Winner(Color::BLACK, 0), EvalResult::Winner(Color::WHITE, 0)),
-        }
-    }
-}
-
-impl Evaluator for MiniMaxEvaluator {
-    fn evaluate_board(&self, board: &Board) -> EvalResult {
-        self.find_move(board).0
-    }
-}
-
-
-pub struct MaterialEvaluator;
-
-impl Evaluator for MaterialEvaluator {
-
-    fn evaluate_board(&self, board: &Board) -> EvalResult {
-        CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    fn eval_position(&self, board: &Board) -> EvalResult {
+        let stats = Arc::clone(&self.stats);
+        let mut stats = stats.lock().unwrap();
+        (*stats).evaluated_positions += 1;
         if board.halfmove_clock >= 50 {
             return Stalemate
         }
@@ -230,6 +246,21 @@ impl Evaluator for MaterialEvaluator {
         let mut rng = rand::thread_rng();
         let jitter = (rng.gen::<f32>() - 0.5) / 10000.0;
         EvalResult::Estimate(evaluation + jitter)
+    }
+}
+
+impl MoveFinder for MiniMaxEvaluator {
+    fn find_move(&self, board: &Board) -> MoveSuggestion {
+        match board.active_player {
+            Color::WHITE => self.eval_max(self.max_depth, board, EvalResult::Winner(Color::BLACK, 0), EvalResult::Winner(Color::WHITE, 0)),
+            Color::BLACK => self.eval_min(self.max_depth, board, EvalResult::Winner(Color::BLACK, 0), EvalResult::Winner(Color::WHITE, 0)),
+        }
+    }
+}
+
+impl Evaluator for MiniMaxEvaluator {
+    fn evaluate_board(&self, board: &Board) -> EvalResult {
+        self.find_move(board).0
     }
 }
 
