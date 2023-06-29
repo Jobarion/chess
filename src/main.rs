@@ -31,21 +31,43 @@ fn main() {
                 .long("depth")
                 .help("Evaluation depth")
                 .default_value("6"))
+            .arg(Arg::with_name("uci")
+                .long("uci")
+                .help("UCI output")
+                .default_value("false"))
+            .arg(Arg::with_name("moves")
+                .long("moves")
+                .help("Additional moves")
+                .default_value(""))
         .get_matches();
     matches.value_of("fen");
-    evaluator(matches.value_of("depth").unwrap().parse::<u8>().unwrap(), matches.value_of("fen").unwrap())
+    evaluator(matches.value_of("depth").unwrap().parse::<u8>().unwrap(), matches.value_of("fen").unwrap(), matches.value_of("uci").unwrap().parse::<bool>().unwrap(), matches.value_of("moves").unwrap())
 }
 
-fn evaluator(depth: u8, fen: &str) {
-    println!("Evaluating {}\nDepth: {}\n", fen, depth);
+fn evaluator(depth: u8, fen: &str, uci: bool, moves: &str) {
+    if !uci {
+      println!("Evaluating {}\nDepth: {}\n", fen, depth);
+    }
 
     let mut board = Board::from_fen(fen.to_string()).unwrap();
-    println!("{}\n\n\n\n", board);
+    
+    if !moves.is_empty() {
+      for m in moves.split(" ") {
+        let chess_move = Move::new(&board, &Square::try_from(&m[0..2]).unwrap(), &Square::try_from(&m[2..4]).unwrap());
+        board = board.do_move(&chess_move);
+      }
+    }
+    
+    if !uci {
+      println!("{}\n\n\n\n", board);
+    }
 
     let evaluator = MiniMaxEvaluator::new(depth);
     let mut pgn = "".to_string();
     for i in 0..1 {
-        spawn_watch_thread(evaluator.stats.clone(), board.clone());
+        if !uci {
+          spawn_watch_thread(evaluator.stats.clone(), board.clone());
+        }
         let start = SystemTime::now();
         let MoveSuggestion(eval, m_opt) = evaluator.find_move(&board);
         evaluator.reset_stats();
@@ -57,15 +79,24 @@ fn evaluator(depth: u8, fen: &str) {
         let m = m_opt.unwrap();
         let since_the_epoch = SystemTime::now().duration_since(start)
             .expect("Time went backwards");
-        println!("Move: {} ({})", m.to_algebraic(&board).unwrap(), eval);
+        if uci {
+          println!("{}", m.to_uci(&board).unwrap());
+        }
+        else {
+          println!("Move: {} ({})", m.to_algebraic(&board).unwrap(), eval);
+        }
         if board.active_player == Color::WHITE {
             pgn = [pgn, board.fullmove.to_string(), ". ".to_string()].concat();
         }
         pgn = [pgn, m.to_algebraic(&board).unwrap(), " ".to_string()].concat();
 //        println!("PGN: {}", pgn);
-        println!();
+        if !uci {
+          println!();
+        }
         board = board.do_move(&m);
-        println!("{}", board);
+        if !uci {
+          println!("{}", board);
+        }
     }
 }
 

@@ -250,6 +250,10 @@ pub mod board {
 
                 Some([piece_str, disambiguation, capture_string, dest_sqr, promo_string].concat())
             }
+            
+            pub fn to_uci(&self, board: &Board) -> Option<String> {
+              Some([self.from.to_string(), self.to.to_string()].concat())
+            }
 
             fn bounds_check(r: u8, f: u8) -> bool {
                 f < 0 || r < 0 || f >= 8 || r >= 8
