@@ -8,8 +8,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/src/bitboard.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/board.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/board.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/board/evaluator.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/board/pieces.rs" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -137,10 +140,16 @@
   </component>
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/jonas/Documents/rust/chess/src&quot;,
     &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;
   }
 }</component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\jonas\Documents\rust\chess\src" />
+      <recent name="C:\Users\jonas\Documents\rust\chess\src\chess2" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\jonas\IdeaProjects\chess\src" />
       <recent name="C:\Users\jonas\IdeaProjects\chess\src\board" />

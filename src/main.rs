@@ -1,20 +1,11 @@
-use std::option::Option::{Some, None};
-use crate::board::board::{Board, Piece, Color};
-use crate::board::board::positional::{Move, Square};
-use crate::board::evaluator::{MiniMaxEvaluator, MoveFinder, MoveSuggestion, EvalResult};
-use crate::board::evaluator::Evaluator;
+use crate::board::board::{Board};
+use crate::board::board::positional::{Square};
 use std::convert::TryFrom;
-use crate::board::evaluator::EvalResult::Stalemate;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{thread, env};
-use std::time::Duration;
-use console::Term;
-use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use clap::{App, Arg};
 
 mod board;
+mod bitboard;
 
 const TERMINAL: bool = true;
 const DEFAULT_DEPTH: u8 = 6;
@@ -40,99 +31,33 @@ fn main() {
                 .help("Additional moves")
                 .default_value(""))
         .get_matches();
-    matches.value_of("fen");
-    evaluator(matches.value_of("depth").unwrap().parse::<u8>().unwrap(), matches.value_of("fen").unwrap(), matches.value_of("uci").unwrap().parse::<bool>().unwrap(), matches.value_of("moves").unwrap())
+    let fen = matches.value_of("fen");
+    // let mut board = Board::from_fen("rnbkqbnr/pppp1ppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()).unwrap();
+    let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
+    /*
+    CURRENTLY BROKEN: PINS :(
+     */
+
+    for n in 1..10 {
+        let start = Instant::now();
+        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    }
+    // let legal_moves = board.legal_moves();
+    // println!("{}\n{}", board, legal_moves.len());
+    // for piece_move in legal_moves {
+    //     println!("=======");
+    //     board.apply_move(&piece_move);
+    //     // let legal_next = board.legal_moves();
+    //     // let next = legal_next.first().unwrap();
+    //     // board.apply_move(&next);
+    //     // println!("{}", legal_next.len());
+    //     println!("{}\n", board);
+    //     // board.undo_move(&next);
+    //     board.undo_move(&piece_move);
+    //     //println!("{}\n", board);
+    // }
 }
 
-fn evaluator(depth: u8, fen: &str, uci: bool, moves: &str) {
-    if !uci {
-      println!("Evaluating {}\nDepth: {}\n", fen, depth);
-    }
-
-    let mut board = Board::from_fen(fen.to_string()).unwrap();
-    
-    if !moves.is_empty() {
-      for m in moves.split(" ") {
-        let chess_move = Move::new(&board, &Square::try_from(&m[0..2]).unwrap(), &Square::try_from(&m[2..4]).unwrap());
-        board = board.do_move(&chess_move);
-      }
-    }
-    
-    if !uci {
-      println!("{}\n\n\n\n", board);
-    }
-
-    let evaluator = MiniMaxEvaluator::new(depth);
-    let mut pgn = "".to_string();
-    for i in 0..1 {
-        if !uci {
-          spawn_watch_thread(evaluator.stats.clone(), board.clone());
-        }
-        let start = SystemTime::now();
-        let MoveSuggestion(eval, m_opt) = evaluator.find_move(&board);
-        evaluator.reset_stats();
-        if let None = m_opt {
-            println!("Game over. {:?}", eval);
-            break;
-        }
-
-        let m = m_opt.unwrap();
-        let since_the_epoch = SystemTime::now().duration_since(start)
-            .expect("Time went backwards");
-        if uci {
-          println!("{}", m.to_uci(&board).unwrap());
-        }
-        else {
-          println!("Move: {} ({})", m.to_algebraic(&board).unwrap(), eval);
-        }
-        if board.active_player == Color::WHITE {
-            pgn = [pgn, board.fullmove.to_string(), ". ".to_string()].concat();
-        }
-        pgn = [pgn, m.to_algebraic(&board).unwrap(), " ".to_string()].concat();
-//        println!("PGN: {}", pgn);
-        if !uci {
-          println!();
-        }
-        board = board.do_move(&m);
-        if !uci {
-          println!("{}", board);
-        }
-    }
-}
-
-fn spawn_watch_thread(stats: Arc<Mutex<board::evaluator::Stats>>, board: Board) {
-    thread::spawn(move || {
-        let mut term = Term::stdout();
-        let mut last = 0;
-        loop {
-            thread::sleep(Duration::from_millis(500));
-            let mut stats = stats.lock().unwrap();
-            let current = (*stats).evaluated_positions;
-            let best_move =(*stats).best_move.clone();
-            let best_move = match best_move {
-                None => "Best move: ?".to_string(),
-                Some(MoveSuggestion(eval, None)) => eval.to_string(),
-                Some(MoveSuggestion(eval, Some(mv))) => format_args!("Best move: {} ({})", mv.to_algebraic(&board).unwrap(), eval).to_string(),
-            };
-
-            if current < last {
-                break;
-            }
-            let diff = (current - last) * 2;
-            last = current;
-            if TERMINAL {
-                term.clear_last_lines(2);
-                term.write_fmt(format_args!("Evaluated {} boards/sec ({} total)\n", diff, current));
-                term.write_line(best_move.as_str());
-            }
-            else {
-                println!("Evaluated {} boards/sec ({} total)", diff, current);
-                println!("{}", best_move);
-            }
-        }
-    });
-
-}
 
 fn square(val: &str) -> Square {
     Square::try_from(val).expect("s1")
