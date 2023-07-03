@@ -8,11 +8,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/src/bitboard.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/piece.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/bitboard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/bitboard.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/board.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/board.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/board/evaluator.rs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/board/pieces.rs" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -155,22 +154,7 @@
       <recent name="C:\Users\jonas\IdeaProjects\chess\src\board" />
     </key>
   </component>
-  <component name="RunManager" selected="Cargo.Run chess debug">
-    <configuration name="Run chess debug asd" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
-      <option name="command" value="run --package chess --bin chess" />
-      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
-      <option name="emulateTerminal" value="false" />
-      <option name="channel" value="DEFAULT" />
-      <option name="requiredFeatures" value="true" />
-      <option name="allFeatures" value="false" />
-      <option name="withSudo" value="false" />
-      <option name="buildTarget" value="REMOTE" />
-      <option name="backtrace" value="SHORT" />
-      <envs />
-      <option name="isRedirectInput" value="false" />
-      <option name="redirectInputPath" value="" />
-      <method v="2" />
-    </configuration>
+  <component name="RunManager" selected="Cargo.Run chess release">
     <configuration name="Run chess debug" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
       <option name="command" value="run --package chess --bin chess" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
@@ -201,8 +185,8 @@
       <option name="redirectInputPath" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="Test board::pieces::pawn_test::pawm_promote_capture" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
-      <option name="command" value="test --package chess --bin chess board::pieces::pawn_test::pawm_promote_capture -- --exact" />
+    <configuration name="Test bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
+      <option name="command" value="test --package chess --bin chess bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw -- --exact" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
       <option name="emulateTerminal" value="false" />
       <option name="channel" value="DEFAULT" />
@@ -214,7 +198,26 @@
       <envs />
       <option name="isRedirectInput" value="false" />
       <option name="redirectInputPath" value="" />
-      <method v="2" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Test bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
+      <option name="command" value="test --package chess --bin chess bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne -- --exact" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <option name="emulateTerminal" value="false" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <envs />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
     </configuration>
     <configuration name="Test board::pieces::pawn_test::pawn_promote_capture_black" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
       <option name="command" value="test --package chess --bin chess board::pieces::pawn_test::pawn_promote_capture_black -- --exact" />
@@ -264,12 +267,18 @@
     <list>
       <item itemvalue="Cargo.Run chess debug" />
       <item itemvalue="Cargo.Run chess release" />
-      <item itemvalue="Cargo.Run chess debug asd" />
-      <item itemvalue="Cargo.Test board::pieces::pawn_test::pawm_promote_capture" />
+      <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw" />
+      <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne" />
       <item itemvalue="Cargo.Test board::pieces::pawn_test::pawn_promote_capture_black" />
       <item itemvalue="Cargo.Test board::pieces::pawn_test::pawn_promote_capture_white" />
       <item itemvalue="Cargo.Test check_test" />
     </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw" />
+        <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />

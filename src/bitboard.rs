@@ -1,8 +1,8 @@
 use std::future::poll_fn;
-use std::ops::{BitAnd, BitOr, BitXor, Not};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
 use std::process::Output;
 use crate::board::board::Board;
-use crate::board::board::positional::Square;
+use crate::piece::Square;
 
 #[derive(Copy, Clone, Debug)]
 pub struct BitBoard(pub u64);
@@ -13,12 +13,12 @@ pub const PAWN_CAPTURE_MOVES_BLACK: [BitBoard; 64] = [BitBoard(0), BitBoard(0), 
 pub const PAWN_MOVES_WHITE: [BitBoard; 64] = [BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(16842752), BitBoard(33685504), BitBoard(67371008), BitBoard(134742016), BitBoard(269484032), BitBoard(538968064), BitBoard(1077936128), BitBoard(2155872256), BitBoard(16777216), BitBoard(33554432), BitBoard(67108864), BitBoard(134217728), BitBoard(268435456), BitBoard(536870912), BitBoard(1073741824), BitBoard(2147483648), BitBoard(4294967296), BitBoard(8589934592), BitBoard(17179869184), BitBoard(34359738368), BitBoard(68719476736), BitBoard(137438953472), BitBoard(274877906944), BitBoard(549755813888), BitBoard(1099511627776), BitBoard(2199023255552), BitBoard(4398046511104), BitBoard(8796093022208), BitBoard(17592186044416), BitBoard(35184372088832), BitBoard(70368744177664), BitBoard(140737488355328), BitBoard(281474976710656), BitBoard(562949953421312), BitBoard(1125899906842624), BitBoard(2251799813685248), BitBoard(4503599627370496), BitBoard(9007199254740992), BitBoard(18014398509481984), BitBoard(36028797018963968), BitBoard(72057594037927936), BitBoard(144115188075855872), BitBoard(288230376151711744), BitBoard(576460752303423488), BitBoard(1152921504606846976), BitBoard(2305843009213693952), BitBoard(4611686018427387904), BitBoard(9223372036854775808), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0)];
 pub const PAWN_MOVES_BLACK: [BitBoard; 64] = [BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(1), BitBoard(2), BitBoard(4), BitBoard(8), BitBoard(16), BitBoard(32), BitBoard(64), BitBoard(128), BitBoard(256), BitBoard(512), BitBoard(1024), BitBoard(2048), BitBoard(4096), BitBoard(8192), BitBoard(16384), BitBoard(32768), BitBoard(65536), BitBoard(131072), BitBoard(262144), BitBoard(524288), BitBoard(1048576), BitBoard(2097152), BitBoard(4194304), BitBoard(8388608), BitBoard(16777216), BitBoard(33554432), BitBoard(67108864), BitBoard(134217728), BitBoard(268435456), BitBoard(536870912), BitBoard(1073741824), BitBoard(2147483648), BitBoard(4294967296), BitBoard(8589934592), BitBoard(17179869184), BitBoard(34359738368), BitBoard(68719476736), BitBoard(137438953472), BitBoard(274877906944), BitBoard(549755813888), BitBoard(1099511627776), BitBoard(2199023255552), BitBoard(4398046511104), BitBoard(8796093022208), BitBoard(17592186044416), BitBoard(35184372088832), BitBoard(70368744177664), BitBoard(140737488355328), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0)];
 pub const KING_MOVES: [BitBoard; 64] = [BitBoard(770), BitBoard(1797), BitBoard(3594), BitBoard(7188), BitBoard(14376), BitBoard(28752), BitBoard(57504), BitBoard(49216), BitBoard(197123), BitBoard(460039), BitBoard(920078), BitBoard(1840156), BitBoard(3680312), BitBoard(7360624), BitBoard(14721248), BitBoard(12599488), BitBoard(50463488), BitBoard(117769984), BitBoard(235539968), BitBoard(471079936), BitBoard(942159872), BitBoard(1884319744), BitBoard(3768639488), BitBoard(3225468928), BitBoard(12918652928), BitBoard(30149115904), BitBoard(60298231808), BitBoard(120596463616), BitBoard(241192927232), BitBoard(482385854464), BitBoard(964771708928), BitBoard(825720045568), BitBoard(3307175149568), BitBoard(7718173671424), BitBoard(15436347342848), BitBoard(30872694685696), BitBoard(61745389371392), BitBoard(123490778742784), BitBoard(246981557485568), BitBoard(211384331665408), BitBoard(846636838289408), BitBoard(1975852459884544), BitBoard(3951704919769088), BitBoard(7903409839538176), BitBoard(15806819679076352), BitBoard(31613639358152704), BitBoard(63227278716305408), BitBoard(54114388906344448), BitBoard(216739030602088448), BitBoard(505818229730443264), BitBoard(1011636459460886528), BitBoard(2023272918921773056), BitBoard(4046545837843546112), BitBoard(8093091675687092224), BitBoard(16186183351374184448), BitBoard(13853283560024178688), BitBoard(144959613005987840), BitBoard(362258295026614272), BitBoard(724516590053228544), BitBoard(1449033180106457088), BitBoard(2898066360212914176), BitBoard(5796132720425828352), BitBoard(11592265440851656704), BitBoard(4665729213955833856)];
+pub const DIAGONALS_NW_SE: [BitBoard; 64] = [BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(8405024), BitBoard(32832), BitBoard(128), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(8405024), BitBoard(32832), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(8405024), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(288794425616760832), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(144396663052566528), BitBoard(288794425616760832), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(72057594037927936), BitBoard(144396663052566528), BitBoard(288794425616760832), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745)];
+pub const DIAGONALS_NE_SW: [BitBoard; 64] = [BitBoard(1), BitBoard(258), BitBoard(66052), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(258), BitBoard(66052), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(66052), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(2323998145211531264), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(2323998145211531264), BitBoard(4647714815446351872), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(2323998145211531264), BitBoard(4647714815446351872), BitBoard(9223372036854775808)];
+pub const FILES: [BitBoard; 8] = [BitBoard(0xFF << 0), BitBoard(0xFF << 8), BitBoard(0xFF << 16), BitBoard(0xFF << 24), BitBoard(0xFF << 32), BitBoard(0xFF << 40), BitBoard(0xFF << 48), BitBoard(0xFF << 56)];
+pub const RANKS: [BitBoard; 8] = [BitBoard(0x0101010101010101 << 0), BitBoard(0x0101010101010101 << 1), BitBoard(0x0101010101010101 << 2), BitBoard(0x0101010101010101 << 3), BitBoard(0x0101010101010101 << 4), BitBoard(0x0101010101010101 << 5), BitBoard(0x0101010101010101 << 6), BitBoard(0x0101010101010101 << 7)];
 
 impl BitBoard {
-
-    pub fn from_square(sqr: Square) -> BitBoard {
-        BitBoard(1 << sqr.0)
-    }
 
     pub fn is_set(&self, sqr: Square) -> bool {
         self.0 & (1 << sqr.0) != 0
@@ -48,6 +48,24 @@ impl BitBoard {
     }
 }
 
+impl PartialEq<u64> for BitBoard {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
+    }
+}
+
+// impl PartialEq<BitBoard> for u64 {
+//     fn eq(&self, other: &BitBoard) -> bool {
+//         *self != other.0
+//     }
+// }
+
+impl From<Square> for BitBoard {
+    fn from(value: Square) -> Self {
+        BitBoard(1 << value.0)
+    }
+}
+
 impl Iterator for BitBoard {
     type Item = Square;
 
@@ -68,7 +86,43 @@ impl BitOr<Square> for BitBoard {
     type Output = BitBoard;
 
     fn bitor(self, rhs: Square) -> BitBoard {
-        self | BitBoard::from_square(rhs)
+        self | BitBoard::from(rhs)
+    }
+}
+
+impl BitOrAssign<Square> for BitBoard {
+    fn bitor_assign(&mut self, rhs: Square) {
+        self.0 |= (1 << rhs.0);
+    }
+}
+
+impl BitXorAssign<Square> for BitBoard {
+    fn bitxor_assign(&mut self, rhs: Square) {
+        self.0 ^= (1 << rhs.0);
+    }
+}
+
+impl BitAndAssign<Square> for BitBoard {
+    fn bitand_assign(&mut self, rhs: Square) {
+        self.0 &= (1 << rhs.0);
+    }
+}
+
+impl BitOrAssign<BitBoard> for BitBoard {
+    fn bitor_assign(&mut self, rhs: BitBoard) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl BitXorAssign<BitBoard> for BitBoard {
+    fn bitxor_assign(&mut self, rhs: BitBoard) {
+        self.0 ^= rhs.0;
+    }
+}
+
+impl BitAndAssign<BitBoard> for BitBoard {
+    fn bitand_assign(&mut self, rhs: BitBoard) {
+        self.0 &= rhs.0;
     }
 }
 
@@ -76,7 +130,7 @@ impl BitXor<Square> for BitBoard {
     type Output = BitBoard;
 
     fn bitxor(self, rhs: Square) -> BitBoard {
-        self ^ BitBoard::from_square(rhs)
+        self ^ BitBoard::from(rhs)
     }
 }
 
@@ -108,6 +162,64 @@ impl BitAnd<Square> for BitBoard {
     type Output = BitBoard;
 
     fn bitand(self, rhs: Square) -> BitBoard {
-        self & BitBoard::from_square(rhs)
+        self & BitBoard::from(rhs)
     }
+}
+
+#[cfg(test)]
+mod bitboard_gen_tests {
+    use crate::bitboard::BitBoard;
+    use crate::board::board::positional::Square;
+    use crate::piece::Square;
+
+    #[test]
+    fn generate_pin_diag_nw_se() {
+        let all = BitBoard(0xFFFFFFFFFFFFFFFF);
+        let rd = 1;
+        let fd = 1;
+        for sqr in all {
+            let mut mask = BitBoard(0) | sqr;
+            let mut rank: i32 = sqr.rank() as i32 + rd;
+            let mut file: i32 = sqr.file() as i32 + fd;
+            while rank < 8 && file < 8 {
+                mask = mask | Square::new(file as usize, rank as usize);
+                rank = rank + rd;
+                file = file + fd;
+            }
+            let mut rank: i32 = sqr.rank() as i32 - rd;
+            let mut file: i32 = sqr.file() as i32 - fd;
+            while rank >= 0 && file >= 0 {
+                mask = mask | Square::new(file as usize, rank as usize);
+                rank = rank - rd;
+                file = file - fd;
+            }
+            print!("BitBoard({}), ", mask.0);
+        }
+    }
+
+    #[test]
+    fn generate_pin_diag_ne_sw() {
+        let all = BitBoard(0xFFFFFFFFFFFFFFFF);
+        let rd = -1;
+        let fd = 1;
+        for sqr in all {
+            let mut mask = BitBoard(0) | sqr;
+            let mut rank: i32 = sqr.rank() as i32 + rd;
+            let mut file: i32 = sqr.file() as i32 + fd;
+            while rank < 8 && file < 8 && rank >= 0 && file >= 0 {
+                mask = mask | Square::new(file as usize, rank as usize);
+                rank = rank + rd;
+                file = file + fd;
+            }
+            let mut rank: i32 = sqr.rank() as i32 - rd;
+            let mut file: i32 = sqr.file() as i32 - fd;
+            while rank >= 0 && file >= 0 && rank < 8 && file < 8 {
+                mask = mask | Square::new(file as usize, rank as usize);
+                rank = rank - rd;
+                file = file - fd;
+            }
+            print!("BitBoard({}), ", mask.0);
+        }
+    }
+
 }

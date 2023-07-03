@@ -1,4 +1,5 @@
 pub mod board {
+    use std::any::type_name;
     use std::cmp::{max, min};
     use std::convert::{Into, TryFrom};
     use std::fmt::{Display, Error, Formatter, Write};
@@ -9,242 +10,33 @@ pub mod board {
 
     use itertools::Itertools;
 
-    use positional::Square;
+    use crate::bitboard::{BitBoard, DIAGONALS_NE_SW, DIAGONALS_NW_SE, FILES, KING_MOVES, KNIGHT_MOVES, PAWN_CAPTURE_MOVES_BLACK, PAWN_CAPTURE_MOVES_WHITE, PAWN_MOVES_BLACK, PAWN_MOVES_WHITE, RANKS};
+    use crate::board::board::CastleState::{Allowed, Forbidden};
+    use crate::piece::*;
+    use crate::piece::PieceType::*;
+    use crate::piece::Color::*;
 
-    use crate::bitboard::{BitBoard, KING_MOVES, KNIGHT_MOVES, PAWN_CAPTURE_MOVES_BLACK, PAWN_CAPTURE_MOVES_WHITE, PAWN_MOVES_BLACK, PAWN_MOVES_WHITE};
-    use crate::board::board::Color::{BLACK, WHITE};
-    use crate::board::board::PieceType::{BISHOP, KING, QUEEN, ROOK};
-    use crate::board::board::positional::{Move, MoveAction};
-
-    type BoardIndex = usize;
+    pub(crate) type BoardIndex = usize;
     pub const RANK_SIZE: BoardIndex = 8;
     pub const FILE_SIZE: BoardIndex = 8;
-    const CASTLING_SQUARES_WHITE: (Square, Square) = (Square::new(0, 0), Square::new(0, RANK_SIZE - 1));
-    const CASTLING_SQUARES_BLACK: (Square, Square) = (Square::new(FILE_SIZE - 1, 0), Square::new(FILE_SIZE - 1, RANK_SIZE - 1));
+    pub(crate) const CASTLING_SQUARES_WHITE: (Square, Square) = (Square::new(2, 0), Square::new(6, 0));
+    pub(crate) const CASTLING_SQUARES_BLACK: (Square, Square) = (Square::new(2, 7), Square::new(6, 7));
 
-    pub mod positional {
-        use std::convert::TryFrom;
-        use std::fmt::{Display, Formatter, Write};
-
-        use crate::board::board::{Board, BoardIndex, CASTLING_SQUARES_BLACK, CASTLING_SQUARES_WHITE, Color, FILE_SIZE, Piece, PieceType, RANK_SIZE};
-
-        #[derive(Copy, Clone, Debug, PartialEq)]
-        pub struct Square(pub BoardIndex);
-
-        #[derive(Debug, Copy, Clone)]
-        pub enum MoveAction {
-            Normal,
-            Capture(PieceType, Square),
-            Promotion(PieceType, Option<PieceType>),
-            Castle(Square)
-        }
-
-        #[derive(Debug, Copy, Clone)]
-        pub struct Move {
-            pub from: Square,
-            pub to: Square,
-            pub move_type: MoveAction
-        }
-
-        impl Square {
-            pub(crate) const fn new(file: BoardIndex, rank: BoardIndex) -> Square {
-                Square(rank * 8 + file)
-            }
-
-            pub fn file(&self) -> BoardIndex {
-                self.0 % 8
-            }
-
-            pub fn rank(&self) -> BoardIndex {
-                self.0 / 8
-            }
-        }
-
-        impl std::ops::Add<Square> for Square {
-            type Output = Square;
-
-            fn add(self, rhs: Square) -> Self::Output {
-                Square(self.0 + rhs.0)
-            }
-        }
-
-        impl std::ops::Sub<Square> for Square {
-            type Output = Square;
-
-            fn sub(self, rhs: Square) -> Self::Output {
-                Square(self.0 - rhs.0)
-            }
-        }
-
-        impl Move {
-
-            // pub fn to_algebraic(&self, board: &Board) -> Option<String> {
-            //     if let Move { from: _, to: _, move_type: MoveAction::Castle(sqr) } = self {
-            //         return Some(if *sqr == CASTLING_SQUARES_WHITE.0 || *sqr == CASTLING_SQUARES_BLACK.0 {
-            //             "0-0"
-            //         } else {
-            //             "0-0-0"
-            //         }.to_string());
-            //     }
-            //     let dest_sqr = self.to.to_string();
-            //     let piece = board.get(self.from)?;
-            //     let piece_str = match piece {
-            //         Piece { color: _, piece_type: PieceType::PAWN } => "".to_string(),
-            //         p => {
-            //             let c: char = Piece::into(p);
-            //             c.to_ascii_uppercase().to_string()
-            //         }
-            //     };
-            //
-            //     let capture_string = match self {
-            //         Move { from: _, to: _, move_type: MoveAction::Capture(_, _) } => "x",
-            //         Move { from: _, to: _, move_type: MoveAction::Promotion(_, Some(_)) } => "x",
-            //         _ => ""
-            //     }.to_string();
-            //     let mut ambi = board.all_available_moves()
-            //         .filter(|m| m.to == self.to)
-            //         .filter(|m| m.from != self.from)
-            //         .filter(|m| board.get_piece(&m.from).unwrap().piece_type == piece.piece_type)
-            //         .fold((true, true, true), |acc, m| {
-            //             println!("{:?}", m);
-            //             if m.from.file() == self.from.0 {
-            //                 (false, acc.1, false)
-            //             } else if m.from.rank() == self.from.1 {
-            //                 (acc.0, false, false)
-            //             } else {
-            //                 (acc.0, acc.1, false)
-            //             }
-            //         });
-            //
-            //     if &capture_string == "x" {
-            //         if piece.piece_type == PieceType::PAWN {
-            //             ambi = (false, true, false);
-            //         }
-            //     }
-            //
-            //     let disambiguation = match ambi {
-            //         (true, true, true) => "".to_string(),
-            //         (true, true, false) => self.from.0.to_string(),
-            //         (true, false, _) => self.from.1.to_string(),
-            //         (false, true, _) => self.from.0.to_string(),
-            //         (false, false, _) => self.from.to_string()
-            //     };
-            //
-            //     let promo_string = if let Move { from: _, to: _, move_type: MoveAction::Promotion(p, Some(_)) } = self {
-            //         let c: char = Piece::into(*p);
-            //         c.to_string().to_ascii_uppercase()
-            //     } else {
-            //         "".to_string()
-            //     };
-            //
-            //     Some([piece_str, disambiguation, capture_string, dest_sqr, promo_string].concat())
-            // }
-
-            pub fn to_uci(&self) -> Option<String> {
-                Some([self.from.to_string(), self.to.to_string()].concat())
-            }
-
-        }
-
-        impl Display for Move {
-            fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
-                write!(f, "{} -> {}", self.from, self.to)
-            }
-        }
-
-        impl Display for Square {
-            fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
-                let file = (('a' as u8) + self.file() as u8) as char;
-                let rank = self.rank() + 1;
-                write!(f, "{}{}", file, rank)
-            }
-        }
-
-        impl TryFrom<&str> for Square {
-
-            type Error = ();
-
-            fn try_from(value: &str) -> Result<Self, Self::Error> {
-                let mut chars = value.chars();
-                let file = match chars.next() {
-                    Some(r) => r,
-                    None => return Err(())
-                };
-                let rank = match chars.next() {
-                    Some(f) => f,
-                    None => return Err(())
-                };
-                let index = rank.to_digit(10);
-                let rank_id = match index {
-                    Some(f) => f - 1,
-                    None => return Err(())
-                } as BoardIndex;
-                let file_id = (file as BoardIndex) - ('a' as BoardIndex);
-                if file_id >= FILE_SIZE {
-                    return Err(());
-                }
-                if rank_id >= FILE_SIZE {
-                    return Err(());
-                }
-                Ok(Square::new(file_id, rank_id))
-            }
-        }
-    }
-
-    #[derive(Debug, Copy, Clone, PartialEq)]
-    pub enum Color {
-        WHITE,
-        BLACK
-    }
-
-    impl Color {
-        pub fn next(&self) -> Color {
-            match self {
-                WHITE => BLACK,
-                BLACK => WHITE,
-            }
-        }
-    }
-
-    impl Not for Color {
-        type Output = Color;
-
-        fn not(self) -> Self::Output {
-            match self {
-                WHITE => BLACK,
-                BLACK => WHITE
-            }
-        }
-    }
-
-    #[derive(Debug, Copy, Clone, PartialEq)]
-    pub enum PieceType {
-        PAWN,
-        ROOK,
-        KNIGHT,
-        BISHOP,
-        QUEEN,
-        KING
-    }
-
-    impl PieceType {
-        fn is_slider(&self) -> bool {
-            match self {
-                PieceType::KNIGHT => false,
-                PieceType::KING => false,
-                PieceType::PAWN => false,
-                _ => true
-            }
-        }
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    pub enum CastleState {
+        Allowed,
+        Forbidden(u32),
     }
 
     #[derive(Debug)]
     pub struct Perft {
-        nodes: u64,
-        captures: u64,
-        promotions: u64,
-        checks: u64,
-        double_checks: u64,
+        pub nodes: u64,
+        pub captures: u64,
+        pub en_passants: u64,
+        pub castles: u64,
+        pub promotions: u64,
+        pub checks: u64,
+        pub double_checks: u64,
     }
 
     impl Perft {
@@ -252,20 +44,14 @@ pub mod board {
             Perft {
                 nodes: 0,
                 captures: 0,
+                en_passants: 0,
+                castles: 0,
                 promotions: 0,
                 checks: 0,
                 double_checks: 0,
             }
         }
     }
-
-    #[derive(Debug, Copy, Clone, PartialEq)]
-    pub struct Piece {
-        pub piece_type: PieceType,
-        pub color: Color
-    }
-
-    pub type PieceOpt = Option<Piece>;
 
     impl Display for Piece {
         fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
@@ -291,52 +77,12 @@ pub mod board {
         }
     }
 
-    impl TryFrom<char> for Piece {
-        type Error = ();
-
-        fn try_from(value: char) -> Result<Self, Self::Error> {
-            let piece_type = match value.to_lowercase().to_string().as_str() {
-                "p" => PieceType::PAWN,
-                "b" => PieceType::BISHOP,
-                "n" => PieceType::KNIGHT,
-                "r" => PieceType::ROOK,
-                "q" => PieceType::QUEEN,
-                "k" => PieceType::KING,
-                _ => return Err(())
-            };
-            if value.is_ascii_uppercase() {
-                Ok(Piece{ piece_type, color: WHITE })
-            } else {
-                Ok(Piece{ piece_type, color: BLACK })
-            }
-        }
-    }
-
-    impl Into<char> for Piece {
-
-        fn into(self) -> char {
-            let Piece{piece_type, color} = self;
-            let symbol = match piece_type {
-                PieceType::PAWN => 'P',
-                PieceType::BISHOP => 'B',
-                PieceType::KNIGHT => 'N',
-                PieceType::ROOK => 'R',
-                PieceType::QUEEN => 'Q',
-                PieceType::KING => 'K'
-            };
-            match color {
-                Color::WHITE => symbol,
-                Color::BLACK => symbol.to_ascii_lowercase()
-            }
-        }
-    }
-
     #[derive(Copy, Clone, Debug)]
     pub struct Board {
         pub board: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize],
         pub active_player: Color,
-        pub castling_options_white: (bool, bool),
-        pub castling_options_black: (bool, bool),
+        pub castling_options_white: (CastleState, CastleState),
+        pub castling_options_black: (CastleState, CastleState),
         pub en_passant_square: Option<Square>,
         pub halfmove_clock: u32,
         pub fullmove: u32,
@@ -354,7 +100,7 @@ pub mod board {
 
     impl Board {
 
-        fn new(board: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize], active_player: Color, castling_options_white: (bool, bool), castling_options_black: (bool, bool), en_passant_square: Option<Square>, halfmove_clock: u32, fullmove: u32) -> Board {
+        fn new(board: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize], active_player: Color, castling_options_white: (CastleState, CastleState), castling_options_black: (CastleState, CastleState), en_passant_square: Option<Square>, halfmove_clock: u32, fullmove: u32) -> Board {
             let mut board = Board {
                 board,
                 active_player,
@@ -383,43 +129,43 @@ pub mod board {
 
 
         pub(crate) fn get(&self, sqr: Square) -> PieceOpt {
-            self.board[sqr.0]
+            self.board[sqr]
         }
 
         pub fn set(&mut self, piece: Piece, sqr: Square) -> PieceOpt {
             let mut previous = self.unset(sqr);
-            self.board[sqr.0] = Some(piece);
+            self.board[sqr] = Some(piece);
             match piece {
-                Piece { piece_type: PieceType::PAWN, color: _ } => self.pawns = self.pawns | sqr,
-                Piece { piece_type: PieceType::ROOK, color: _ } => self.rooks = self.rooks | sqr,
-                Piece { piece_type: PieceType::KNIGHT, color: _ } => self.knights = self.knights | sqr,
-                Piece { piece_type: PieceType::BISHOP, color: _ } => self.bishops = self.bishops | sqr,
-                Piece { piece_type: PieceType::QUEEN, color: _ } => self.queens = self.queens | sqr,
-                Piece { piece_type: PieceType::KING, color: _ } => self.kings = self.kings | sqr,
+                Piece { piece_type: PieceType::PAWN, color: _ } => self.pawns |= sqr,
+                Piece { piece_type: PieceType::ROOK, color: _ } => self.rooks |= sqr,
+                Piece { piece_type: PieceType::KNIGHT, color: _ } => self.knights |= sqr,
+                Piece { piece_type: PieceType::BISHOP, color: _ } => self.bishops |= sqr,
+                Piece { piece_type: PieceType::QUEEN, color: _ } => self.queens |= sqr,
+                Piece { piece_type: PieceType::KING, color: _ } => self.kings |= sqr,
             }
             match piece {
-                Piece{ piece_type: _, color: Color::WHITE } => self.white = self.white | sqr,
-                Piece{ piece_type: _, color: Color::BLACK } => self.black = self.black | sqr,
+                Piece{ piece_type: _, color: Color::WHITE } => self.white |= sqr,
+                Piece{ piece_type: _, color: Color::BLACK } => self.black |= sqr,
             }
             previous
         }
 
         pub fn unset(&mut self, sqr: Square) -> PieceOpt {
-            let piece = self.board[sqr.0];
+            let piece = self.board[sqr];
             let anti_mask = BitBoard(!(1 << sqr.0));
-            self.board[sqr.0] = None;
+            self.board[sqr] = None;
             match piece {
-                Some(Piece { piece_type: PieceType::PAWN, color: _ }) => self.pawns = self.pawns & anti_mask,
-                Some(Piece { piece_type: PieceType::ROOK, color: _ }) => self.rooks = self.rooks & anti_mask,
-                Some(Piece { piece_type: PieceType::KNIGHT, color: _ }) => self.knights = self.knights & anti_mask,
-                Some(Piece { piece_type: PieceType::BISHOP, color: _ }) => self.bishops = self.bishops & anti_mask,
-                Some(Piece { piece_type: PieceType::QUEEN, color: _ }) => self.queens = self.queens & anti_mask,
-                Some(Piece { piece_type: PieceType::KING, color: _ }) => self.kings = self.kings & anti_mask,
+                Some(Piece { piece_type: PAWN, color: _ }) => self.pawns &= anti_mask,
+                Some(Piece { piece_type: ROOK, color: _ }) => self.rooks &= anti_mask,
+                Some(Piece { piece_type: KNIGHT, color: _ }) => self.knights &= anti_mask,
+                Some(Piece { piece_type: BISHOP, color: _ }) => self.bishops &= anti_mask,
+                Some(Piece { piece_type: QUEEN, color: _ }) => self.queens &= anti_mask,
+                Some(Piece { piece_type: KING, color: _ }) => self.kings &= anti_mask,
                 _ => {}
             }
             match piece {
-                Some(Piece{ piece_type: _, color: WHITE }) => self.white = self.white & anti_mask,
-                Some(Piece{ piece_type: _, color: BLACK }) => self.black = self.black & anti_mask,
+                Some(Piece{ piece_type: _, color: WHITE }) => self.white &= anti_mask,
+                Some(Piece{ piece_type: _, color: BLACK }) => self.black &= anti_mask,
                 _ => {}
             }
             piece
@@ -428,39 +174,138 @@ pub mod board {
         pub fn apply_move(&mut self, piece_move: &Move) {
             let moved_piece = self.unset(piece_move.from).unwrap();
             self.unset(piece_move.to);
-            debug_assert_eq!(moved_piece.color, self.active_player);
-
+            let old_ep_square = self.en_passant_square;
+            self.en_passant_square = None;
             match piece_move {
-                Move{from, to, move_type: MoveAction::Promotion(promotion_type, _)} => {
+                Move{from, to, move_type: MoveAction::Promotion(promotion_type, _), previous_ep_square} => {
                     self.set(Piece{piece_type: *promotion_type, color: self.active_player}, *to);
-                }
-                Move{from, to, move_type: _} => {
+                    self.halfmove_clock = 0;
+                },
+                Move{from, to, move_type: MoveAction::Capture(_), previous_ep_square} => {
                     self.set(moved_piece, *to);
+                    self.halfmove_clock = 0;
+                },
+                Move{from, to, move_type: MoveAction::Normal, previous_ep_square} if moved_piece.piece_type == PAWN => {
+                    let pawn_starting_rank = match self.active_player {
+                        WHITE => 1,
+                        BLACK => 6
+                    };
+                    if from.rank() == pawn_starting_rank && (to.rank() as i32 - from.rank() as i32).abs() == 2 {
+                        self.en_passant_square = Some(Square::new(from.file(), (from.rank() + to.rank()) / 2));
+                    }
+                    self.set(moved_piece, *to);
+                    self.halfmove_clock = 0;
                 }
+                Move{from, to, move_type: MoveAction::Normal, previous_ep_square} => {
+                    self.set(moved_piece, *to);
+                    self.halfmove_clock += 1;
+                }
+                Move{from, to, move_type: MoveAction::EnPassant, previous_ep_square} => {
+                    self.set(moved_piece, *to);
+                    let old_ep_square = old_ep_square.expect("EnPassant move requires en passant square");
+                    self.unset(Square::new(old_ep_square.file(), from.rank()));
+                    self.halfmove_clock = 0;
+                }
+                Move { from, to, move_type: MoveAction::Castle(csquare), previous_ep_square: _ } => {
+                    self.set(moved_piece, *to);
+                    let rook = self.unset(Square::new(if csquare.file() == 3 { 0 } else { 7 }, csquare.rank())).unwrap();
+                    self.set(rook, *csquare);
+                }
+            }
+            //Capturing the rook doesn't change castle options
+            if self.castling_options_white.0 == Allowed {
+                self.castling_options_white.0 = match moved_piece {
+                    Piece {piece_type: KING, color: WHITE} => Forbidden(self.fullmove * 2),
+                    Piece {piece_type: ROOK, color: WHITE} if piece_move.from == Square::new(0, 0) => Forbidden(self.fullmove * 2),
+                    _ if piece_move.to == Square::new(0, 0) => Forbidden(self.fullmove * 2 + 1), //Capture
+                    _ => Allowed
+                }
+            }
+            if self.castling_options_white.1 == Allowed {
+                self.castling_options_white.1 = match moved_piece {
+                    Piece {piece_type: KING, color: WHITE} => Forbidden(self.fullmove * 2),
+                    Piece {piece_type: ROOK, color: WHITE} if piece_move.from == Square::new(7, 0) => Forbidden(self.fullmove * 2),
+                    _ if piece_move.to == Square::new(7, 0) => Forbidden(self.fullmove * 2 + 1), //Capture
+                    _ => Allowed
+                }
+            }
+            if self.castling_options_black.0 == Allowed {
+                self.castling_options_black.0 = match moved_piece {
+                    Piece {piece_type: KING, color: BLACK} => Forbidden(self.fullmove * 2 + 1),
+                    Piece {piece_type: ROOK, color: BLACK} if piece_move.from == Square::new(0, 7) => Forbidden(self.fullmove * 2 + 1),
+                    _ if piece_move.to == Square::new(0, 7) => Forbidden(self.fullmove * 2), //Capture
+                    _ => Allowed
+                }
+            }
+            if self.castling_options_black.1 == Allowed {
+                self.castling_options_black.1 = match moved_piece {
+                    Piece {piece_type: KING, color: BLACK} => Forbidden(self.fullmove * 2 + 1),
+                    Piece {piece_type: ROOK, color: BLACK} if piece_move.from == Square::new(7, 7) => Forbidden(self.fullmove * 2 + 1),
+                    _ if piece_move.to == Square::new(7, 7) => Forbidden(self.fullmove * 2), //Capture
+                    _ => Allowed
+                }
+            }
+            if self.active_player == BLACK {
+                self.fullmove += 1;
             }
             self.active_player = !self.active_player;
         }
 
         pub fn undo_move(&mut self, piece_move: &Move) {
             self.active_player = !self.active_player;
+            if self.active_player == BLACK {
+                self.fullmove -= 1;
+            }
+            let half_move_timer = if self.active_player == WHITE {
+                self.fullmove * 2
+            } else {
+                self.fullmove * 2 + 1
+            };
+            self.castling_options_white.0 = match self.castling_options_white.0 {
+                Forbidden(m) if m == half_move_timer => Allowed,
+                _ => self.castling_options_white.0
+            };
+            self.castling_options_white.1 = match self.castling_options_white.1 {
+                Forbidden(m) if m == half_move_timer => Allowed,
+                _ => self.castling_options_white.1
+            };
+            self.castling_options_black.0 = match self.castling_options_black.0 {
+                Forbidden(m) if m == half_move_timer => Allowed,
+                _ => self.castling_options_black.0
+            };
+            self.castling_options_black.1 = match self.castling_options_black.1 {
+                Forbidden(m) if m == half_move_timer => Allowed,
+                _ => self.castling_options_black.1
+            };
             let moved_piece = self.unset(piece_move.to).unwrap();
 
             debug_assert_eq!(moved_piece.color, self.active_player);
+            self.en_passant_square = piece_move.previous_ep_square;
 
             match piece_move {
-                Move{from, to, move_type: MoveAction::Promotion(_, None)} => {
+                Move{from, to, move_type: MoveAction::Promotion(_, None), previous_ep_square } => {
                     self.set(Piece{piece_type: PieceType::PAWN, color: self.active_player}, *from);
                 }
-                Move{from, to, move_type: MoveAction::Promotion(_, Some(captured_type))} => {
+                Move{from, to, move_type: MoveAction::Promotion(_, Some(captured_type)), previous_ep_square} => {
                     self.set(Piece{piece_type: PieceType::PAWN, color: self.active_player}, *from);
                     self.set(Piece{piece_type: *captured_type, color: !self.active_player}, *to);
                 }
-                Move{from, to, move_type: MoveAction::Capture(captured_type, capture_square)} => {
+                Move{from, to, move_type: MoveAction::Capture(captured_type), previous_ep_square} => {
                     self.set(moved_piece, *from);
-                    self.set(Piece{piece_type: *captured_type, color: !self.active_player}, *capture_square);
+                    self.set(Piece{piece_type: *captured_type, color: !self.active_player}, *to);
                 }
-                Move{from, to, move_type: _} => {
+                Move{from, to, move_type: MoveAction::EnPassant, previous_ep_square} => {
                     self.set(moved_piece, *from);
+                    let previous_ep_square = previous_ep_square.expect("EnPassant undo requires previous en passant square");
+                    self.set(Piece{piece_type: PieceType::PAWN, color: !self.active_player}, Square::new(previous_ep_square.file(), from.rank()));
+                }
+                Move { from, to, move_type: MoveAction::Normal, previous_ep_square: _ } => {
+                    self.set(moved_piece, *from);
+                }
+                Move { from, to, move_type: MoveAction::Castle(csquare), previous_ep_square: _ } => {
+                    self.set(moved_piece, *from);
+                    let rook = self.unset(*csquare).unwrap();
+                    self.set(rook, Square::new(if csquare.file() == 3 { 0 } else { 7 }, csquare.rank()));
                 }
             }
         }
@@ -482,31 +327,51 @@ pub mod board {
 
         pub fn perft(&mut self, depth: u8) -> Perft {
             let mut perft = Perft::new();
-            self._perft(&mut perft, depth);
+            if depth > 0 {
+                self._perft(&mut perft, depth);
+            }
+            else {
+                perft.nodes = 1
+            }
             perft
         }
 
         fn _perft(&mut self, mut perft: &mut Perft, depth: u8) {
             for lmove in self.legal_moves() {
                 //Don't descend into king captures
-                if let MoveAction::Capture(KING, _) = lmove.move_type {
+                if let MoveAction::Capture(KING) = lmove.move_type {
                     continue;
                 }
+                // let old_castle_ops = (self.castling_options_white, self.castling_options_black).clone();
                 self.apply_move(&lmove);
                 if depth == 1 {
                     match lmove.move_type {
-                        MoveAction::Capture(_, _) => perft.captures = perft.captures + 1,
-                        MoveAction::Promotion(_, _) => perft.promotions = perft.promotions + 1,
+                        MoveAction::Capture(_) => perft.captures += 1,
+                        MoveAction::EnPassant => {
+                            perft.captures += 1;
+                            perft.en_passants += 1;
+                        },
+                        MoveAction::Promotion(_, None) => perft.promotions += 1,
+                        MoveAction::Promotion(_, Some(_)) => {
+                            perft.promotions += 1;
+                            perft.captures += 1;
+                        },
+                        MoveAction::Castle(_) => {
+                            perft.castles += 1;
+                        }
                         _ => {}
                     }
-                    perft.nodes = perft.nodes + 1;
+                    perft.nodes += 1;
                 }
                 else {
-                    //TODO remove
-
                     self._perft(&mut perft, depth - 1);
                 }
-                self.undo_move(&lmove)
+                self.undo_move(&lmove);
+
+                // if old_castle_ops != (self.castling_options_white, self.castling_options_black) {
+                //     println!("Diff in move {}, depth {}", lmove.to_uci(), depth);
+                //     break;
+                // }
             }
         }
 
@@ -521,29 +386,33 @@ pub mod board {
 
             let (king_danger_squares, attackers) = self.generate_king_danger_squares();
 
-            // println!("Danger");
+            // println!("Danger squares");
             // self.print_highlighted(king_danger_squares);
-            //King is in check
-            // println!("Attacker count is {}", attackers.0.count_ones());
+
+            // println!("Attackers");
+            // self.print_highlighted(attackers);
+
             if attackers.0.count_ones() > 0  {
                 return self.generate_king_danger_moves(king_square, king_danger_squares, attackers);
             }
+            let pin_mask = self.generate_pin_mask(king_square, self.active_player);
+
             let mut moves: Vec<Move> = vec!();
-            // let pin_mask = self.generate_pin_mask(king_square, self.active_player);
-            // println!("Pin mask");
-            // self.print_highlighted(pin_mask);
-            //TODO: Should we use iterators here? Copy pasting the same board iterator loop seems dumb
-            for square_id in 0..(FILE_SIZE * RANK_SIZE) {
-                // println!("Checking {}", Square(square_id));
-                if (self.active_color_mask() & Square(square_id)).0 == 0 {
-                    continue;
-                }
-                let sqr = Square(square_id);
-                let mut move_mask = self.generate_move_squares_by_piece(sqr, self.active_player, false);
-                if let Some(Piece{piece_type: KING, color: _}) = self.board[sqr.0] {
+            for sqr in self.active_color_mask() {
+                let mut move_mask = self.generate_move_squares_by_piece(sqr, self.active_player, king_danger_squares);
+                if let Some(Piece{piece_type: KING, color: _}) = self.board[sqr] {
                     move_mask = move_mask & !king_danger_squares;
                 }
-                // println!("Movable piece at {} with {} moves", sqr, move_mask.0.count_ones());
+                else if pin_mask.is_set(sqr) {
+                    let partial_pin_mask = match king_square.direction_between(&sqr) {
+                        (1, 0) | (-1, 0) => FILES[sqr.rank()],
+                        (0, 1) | (0, -1) => RANKS[sqr.file()],
+                        (1, 1) | (-1,-1) => DIAGONALS_NW_SE[sqr],
+                        (1,-1) | (-1, 1) => DIAGONALS_NE_SW[sqr],
+                        _ => panic!()
+                    };
+                    move_mask &= partial_pin_mask;
+                }
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
             moves
@@ -552,9 +421,7 @@ pub mod board {
         fn generate_king_danger_moves(&self, king_square: Square, king_danger_squares: BitBoard, attackers: BitBoard) -> Vec<Move> {
             let mut moves: Vec<Move> = vec!();
 
-            let evasive_king_moves = KING_MOVES[king_square.0] & !king_danger_squares & !self.active_color_mask();
-            // println!("Evasive");
-            // self.print_highlighted(evasive_king_moves);
+            let evasive_king_moves = KING_MOVES[king_square] & !king_danger_squares & !self.active_color_mask();
             moves.append(&mut self.moves_from_target_bitboard(king_square, evasive_king_moves));
 
             //Double check, the king can only run away
@@ -578,10 +445,12 @@ pub mod board {
             // println!("Attackers");
             // self.print_highlighted(attackers);
 
-            let block_mask = if self.board[attacker_square.0].unwrap().piece_type.is_slider() {
+            let pin_mask = self.generate_pin_mask(king_square, self.active_player);
+
+            let block_mask = if self.board[attacker_square].unwrap().piece_type.is_slider() {
                 Board::ray_between_squares_exclusive(king_square, attacker_square)
             } else {
-                BitBoard(0xFFFFFFFFFFFFFFFF)
+                BitBoard(0)
             };
 
             // println!("Block mask");
@@ -589,21 +458,40 @@ pub mod board {
 
             let check_prevention_mask = block_mask | attackers;
 
-            //TODO: Can we get faster by doing self.active_player_mask() and popping the bits out?
-            //TODO: If above works, we can skip knights and pawns because for those we can calculate the capture directly. Maybe it helps. Doesn't necessarily work for blocks though
-            for square_id in 0..(FILE_SIZE * RANK_SIZE) {
-                if (self.active_color_mask() & Square(square_id)).0 == 0 {
-                    continue;
+            // println!("Legal check prevention mask");
+            // self.print_highlighted(check_prevention_mask);
+
+            let mut ep_check_capture_mask = BitBoard(0);
+            if let Some(ep_square) = self.en_passant_square {
+                let moved_pawn_square = Square::new(ep_square.file(), if ep_square.rank() == 2 { 3 } else { 4 });
+                if attackers & moved_pawn_square != 0 {
+                    ep_check_capture_mask |= ep_square;
                 }
-                let sqr = Square(square_id);
+            }
+
+                //TODO[perf]: We can skip knights and pawns here because for those we can calculate the capture directly. Maybe it helps. Doesn't necessarily work for blocks though
+            for sqr in self.active_color_mask() & !self.kings {
                 //Generate moves and only accept moves that end on attacker squares
-                let mut move_mask = self.generate_move_squares_by_piece(sqr, self.active_player, false) & check_prevention_mask;
-                if move_mask.0 == 0 {
+                let mut move_mask = self.generate_move_squares_by_piece(sqr, self.active_player, king_danger_squares);
+
+                if let Some(Piece{piece_type: PAWN, color}) = self.board[sqr] {
+                    move_mask &= (check_prevention_mask | ep_check_capture_mask);
+                } else {
+                    move_mask &= check_prevention_mask;
+                }
+
+                if move_mask == 0 {
                     continue;
                 }
-                //King can't move on danger squares to block/capture
-                if let Some(Piece{piece_type: KING, color: _}) = self.board[sqr.0] {
-                    move_mask = move_mask & !king_danger_squares;
+                if pin_mask.is_set(sqr) {
+                    let partial_pin_mask = match king_square.direction_between(&sqr) {
+                        (1, 0) | (-1, 0) => FILES[sqr.rank()],
+                        (0, 1) | (0, -1) => RANKS[sqr.file()],
+                        (1, 1) | (-1,-1) => DIAGONALS_NW_SE[sqr],
+                        (1,-1) | (-1, 1) => DIAGONALS_NE_SW[sqr],
+                        _ => panic!()
+                    };
+                    move_mask &= partial_pin_mask;
                 }
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
@@ -619,8 +507,27 @@ pub mod board {
             let mut file = from.file() as i8 + df ;
             let mut rank = from.rank() as i8 + dr;
             let mut ray_mask = BitBoard(0);
-            while file as BoardIndex != to.file() {
+            while file as BoardIndex != to.file() || rank as BoardIndex != to.rank() {
                 ray_mask = ray_mask.set(Square::new(file as BoardIndex, rank as BoardIndex));
+                file = file + df;
+                rank = rank + dr;
+            }
+            ray_mask
+        }
+
+        fn ray_between_squares_inclusive(from: Square, to: Square) -> BitBoard {
+            let file_diff: i8 = to.file() as i8 - from.file() as i8;
+            let rank_diff: i8 = to.rank() as i8 - from.rank() as i8;
+            let df = file_diff.signum();
+            let dr = rank_diff.signum();
+            let mut file = from.file() as i8;
+            let mut rank = from.rank() as i8;
+            let mut ray_mask = BitBoard(0);
+            loop {
+                ray_mask = ray_mask.set(Square::new(file as BoardIndex, rank as BoardIndex));
+                if file as BoardIndex == to.file() && rank as BoardIndex == to.rank() {
+                    break;
+                }
                 file = file + df;
                 rank = rank + dr;
             }
@@ -633,84 +540,109 @@ pub mod board {
             let king = self.kings & self.active_color_mask();
             //Remove active king for danger square check
             if self.active_player == WHITE {
-                self.white = self.white ^ king;
+                self.white ^= king;
             }
             else {
-                self.black = self.black ^ king;
+                self.black ^= king;
             }
-            self.kings = self.kings ^ king;
-            // if king.0 == 0 {
-            //     println!("Final board {}", self);
-            //     panic!();
-            // }
+            self.kings ^= king;
+
             self.board[king.0.trailing_zeros() as usize] = None;
 
-            for square_id in 0..(FILE_SIZE * RANK_SIZE) {
-                if (self.opponent_color_mask() & Square(square_id)).0 == 0 {
-                    continue;
-                }
-                let sqr = Square(square_id);
-                let attacked_bp = self.generate_move_squares_by_piece(sqr, !self.active_player, true);
-                attacked_squares = attacked_squares | attacked_bp;
-                if (king & attacked_bp).0 != 0 {
-                    attackers = attackers | sqr;
+            for sqr in self.opponent_color_mask() {
+                let attacked_bp = self.generate_danger_squares_by_piece(sqr, !self.active_player);
+                attacked_squares |= attacked_bp;
+                if king & attacked_bp != 0 {
+                    attackers |= sqr;
                 }
             }
             //Place king back
-            self.kings = self.kings ^ king;
+            self.kings ^= king;
             if self.active_player == WHITE {
-                self.white = self.white ^ king;
+                self.white ^= king;
             }
             else {
-                self.black = self.black ^ king;
+                self.black ^= king;
             }
             self.board[king.0.trailing_zeros() as usize] = Some(Piece{piece_type: PieceType::KING, color: self.active_player});
             (attacked_squares, attackers)
         }
 
-        fn generate_move_squares_by_piece(&self, sqr: Square, color_to_move: Color, danger_only: bool) -> BitBoard {
-            match self.board[sqr.0] {
+        fn generate_danger_squares_by_piece(&self, sqr: Square, color_to_move: Color) -> BitBoard {
+            match self.board[sqr] {
                 None => BitBoard(0),
                 Some(Piece{piece_type: _, color}) if color != color_to_move => BitBoard(0),
                 Some(Piece{piece_type, color }) => match piece_type {
-                    PieceType::KING => KING_MOVES[sqr.0] & !self.mask_for_color(color_to_move),
-                    PieceType::KNIGHT => KNIGHT_MOVES[sqr.0] & !self.mask_for_color(color_to_move),
-                    PieceType::PAWN => if color_to_move == WHITE {
-                        if danger_only {
-                            PAWN_CAPTURE_MOVES_WHITE[sqr.0]
+                    PieceType::KING => KING_MOVES[sqr],
+                    PieceType::KNIGHT => KNIGHT_MOVES[sqr],
+                    PieceType::PAWN if color_to_move == WHITE => PAWN_CAPTURE_MOVES_WHITE[sqr.0],
+                    PieceType::PAWN => PAWN_CAPTURE_MOVES_BLACK[sqr],
+                    PieceType::ROOK => self.generate_rook_moves(sqr, color, true),
+                    PieceType::BISHOP => self.generate_bishop_moves(sqr, color, true),
+                    PieceType::QUEEN => self.generate_queen_moves(sqr, color, true),
+                }
+            }
+        }
+
+        fn generate_move_squares_by_piece(&self, sqr: Square, color_to_move: Color, king_danger_squares: BitBoard) -> BitBoard {
+            match self.board[sqr] {
+                None => BitBoard(0),
+                Some(Piece{piece_type: _, color}) if color != color_to_move => BitBoard(0),
+                Some(Piece{piece_type, color }) => match piece_type {
+                    PieceType::KING => {
+                        let mut king_moves = KING_MOVES[sqr] & !self.mask_for_color(color_to_move);
+                        let no_castle_squares = king_danger_squares | ((self.white | self.black) ^ self.kings);
+                        if let (Some(c_square), _) = self.current_castle_options() {
+                            let rook_passing_square = Square::new((c_square.file() as isize + sqr.direction_between(&c_square).0) as usize, c_square.rank());
+                            if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 && self.board[rook_passing_square] == None {
+                                king_moves |= c_square;
+                            }
                         }
-                        else {
-                            let mut pawn_moves = PAWN_CAPTURE_MOVES_WHITE[sqr.0] & self.mask_for_color(!color_to_move);
-                            let push_sqr = Square::new(sqr.file(), sqr.rank() + 1);
-                            if self.board[push_sqr.0].is_none() {
-                                pawn_moves = pawn_moves | push_sqr;
+                        if let (_, Some(c_square)) = self.current_castle_options() {
+                            if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 {
+                                king_moves |= c_square;
+                            }
+                        }
+                        king_moves
+                    }
+                    PieceType::KNIGHT => KNIGHT_MOVES[sqr] & !self.mask_for_color(color_to_move),
+                    PieceType::PAWN if color_to_move == WHITE => {
+                        let ep_mask = self.en_passant_square
+                            .map(| sqr| BitBoard::from(sqr))
+                            .unwrap_or(BitBoard(0));
+                        let mut pawn_moves = PAWN_CAPTURE_MOVES_WHITE[sqr] & (self.mask_for_color(!color_to_move) | ep_mask);
+                        let push_sqr = Square::new(sqr.file(), sqr.rank() + 1);
+                        if self.board[push_sqr].is_none() {
+                            pawn_moves |= push_sqr;
+                            if sqr.rank() == 1 {
                                 let push_sqr = Square::new(sqr.file(), sqr.rank() + 2);
-                                if self.board[push_sqr.0].is_none() && sqr.rank() == 1 {
-                                    pawn_moves = pawn_moves | push_sqr;
+                                if self.board[push_sqr].is_none() {
+                                    pawn_moves |= push_sqr;
                                 }
                             }
-                            pawn_moves
                         }
-                    } else {
-                        if danger_only {
-                            PAWN_CAPTURE_MOVES_BLACK[sqr.0]
-                        }
-                        else {
-                            let mut pawn_moves = PAWN_CAPTURE_MOVES_BLACK[sqr.0] & self.mask_for_color(!color_to_move);
-                            let push_sqr = Square::new(sqr.file(), sqr.rank() - 1);
-                            if self.board[push_sqr.0].is_none() {
-                                pawn_moves = pawn_moves | push_sqr;
+                        pawn_moves
+                    }
+                    PieceType::PAWN => {
+                        let ep_mask = self.en_passant_square
+                            .map(| sqr| BitBoard::from(sqr))
+                            .unwrap_or(BitBoard(0));
+                        let mut pawn_moves = PAWN_CAPTURE_MOVES_BLACK[sqr] & (self.mask_for_color(!color_to_move) | ep_mask);
+                        let push_sqr = Square::new(sqr.file(), sqr.rank() - 1);
+                        if self.board[push_sqr].is_none() {
+                            pawn_moves |= push_sqr;
+                            if sqr.rank() == 6 {
                                 let push_sqr = Square::new(sqr.file(), sqr.rank() - 2);
-                                if self.board[push_sqr.0].is_none() && sqr.rank() == 6 {
-                                    pawn_moves = pawn_moves | push_sqr;
+                                if self.board[push_sqr].is_none() && sqr.rank() == 6 {
+                                    pawn_moves |= push_sqr;
                                 }
                             }
-                            pawn_moves
                         }
+                        pawn_moves
                     },
-                    PieceType::ROOK => self.generate_rook_moves(sqr, color),
-                    PieceType::BISHOP => self.generate_bishop_moves(sqr, color),
-                    PieceType::QUEEN => self.queen_attack_squares(sqr, color),
+                    PieceType::ROOK => self.generate_rook_moves(sqr, color, false),
+                    PieceType::BISHOP => self.generate_bishop_moves(sqr, color, false),
+                    PieceType::QUEEN => self.generate_queen_moves(sqr, color, false),
                 }
             }
         }
@@ -725,16 +657,16 @@ pub mod board {
             let mut pin_squares_ray = BitBoard(0);
             for n in (sqr.file() + 1)..8 {
                 let sq = Square::new(n, sqr.rank());
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -745,16 +677,16 @@ pub mod board {
             pin_squares_ray = BitBoard(0);
             for n in (0..sqr.file()).rev() {
                 let sq = Square::new(n, sqr.rank());
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -765,16 +697,16 @@ pub mod board {
             pin_squares_ray = BitBoard(0);
             for n in (sqr.rank() + 1)..8 {
                 let sq = Square::new(sqr.file(), n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -785,16 +717,16 @@ pub mod board {
             pin_squares_ray = BitBoard(0);
             for n in (0..sqr.rank()).rev() {
                 let sq = Square::new(sqr.file(), n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -817,16 +749,16 @@ pub mod board {
                     break;
                 }
                 let sq = Square::new(sqr.file() + n, sqr.rank() + n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -840,16 +772,16 @@ pub mod board {
                     break;
                 }
                 let sq = Square::new(sqr.file() - n, sqr.rank() - n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -863,16 +795,16 @@ pub mod board {
                     break;
                 }
                 let sq = Square::new(sqr.file() + n, sqr.rank() - n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -886,16 +818,16 @@ pub mod board {
                     break;
                 }
                 let sq = Square::new(sqr.file() - n, sqr.rank() + n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
                     if color != pinned_color {
                         if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
-                            pin_squares = pin_squares | pin_squares_ray;
+                            pin_squares |= pin_squares_ray;
                         }
                         break;
                     }
                     else if first_hit {
                         first_hit = false;
-                        pin_squares_ray = pin_squares_ray | sq;
+                        pin_squares_ray |= sq;
                     }
                     else {
                         break;
@@ -905,52 +837,52 @@ pub mod board {
             pin_squares
         }
 
-        fn generate_rook_moves(&self, sqr: Square, rook_color: Color) -> BitBoard {
+        fn generate_rook_moves(&self, sqr: Square, rook_color: Color, include_danger: bool) -> BitBoard {
             let mut move_squares = BitBoard(0);
             for n in (sqr.file() + 1)..8 {
                 let sq = Square::new(n, sqr.rank());
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != rook_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != rook_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             for n in (0..sqr.file()).rev() {
                 let sq = Square::new(n, sqr.rank());
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != rook_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != rook_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             for n in (sqr.rank() + 1)..8 {
                 let sq = Square::new(sqr.file(), n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != rook_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != rook_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             for n in (0..sqr.rank()).rev() {
                 let sq = Square::new(sqr.file(), n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != rook_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != rook_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             move_squares
         }
 
-        fn generate_bishop_moves(&self, sqr: Square, bishop_color: Color) -> BitBoard {
+        fn generate_bishop_moves(&self, sqr: Square, bishop_color: Color, include_danger: bool) -> BitBoard {
             let mut move_squares = BitBoard(0);
             let rank = sqr.rank();
             let file = sqr.file();
@@ -961,63 +893,63 @@ pub mod board {
                     break;
                 }
                 let sq = Square::new(sqr.file() + n, sqr.rank() + n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != bishop_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != bishop_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             for n in 1..8 {
                 if min < n {
                     break;
                 }
                 let sq = Square::new(sqr.file() - n, sqr.rank() - n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != bishop_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != bishop_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             for n in 1..8 {
                 if rank < n || file + n >= 8 {
                     break;
                 }
                 let sq = Square::new(sqr.file() + n, sqr.rank() - n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != bishop_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != bishop_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             for n in 1..8 {
                 if file < n || rank + n >= 8 {
                     break;
                 }
                 let sq = Square::new(sqr.file() - n, sqr.rank() + n);
-                if let Some(Piece{piece_type, color}) = self.board[sq.0] {
-                    if color != bishop_color {
-                        move_squares = move_squares | sq;
+                if let Some(Piece{piece_type, color}) = self.board[sq] {
+                    if include_danger || color != bishop_color {
+                        move_squares |= sq;
                     }
                     break;
                 }
-                move_squares = move_squares | sq;
+                move_squares |= sq;
             }
             move_squares
         }
 
-        fn queen_attack_squares(&self, sqr: Square, color: Color) -> BitBoard {
-            self.generate_bishop_moves(sqr, color) | self.generate_rook_moves(sqr, color)
+        fn generate_queen_moves(&self, sqr: Square, color: Color, include_danger: bool) -> BitBoard {
+            self.generate_bishop_moves(sqr, color, include_danger) | self.generate_rook_moves(sqr, color, include_danger)
         }
 
         fn moves_from_target_bitboard(&self, from: Square, mut possible_targets: BitBoard) -> Vec<Move> {
             let mut moves: Vec<Move> = vec!();
-            while possible_targets.0 != 0 {
+            while possible_targets != 0 {
                 let move_id = possible_targets.0.trailing_zeros();
                 let to = Square(move_id as BoardIndex);
                 possible_targets = possible_targets.toggle(to);
@@ -1028,7 +960,7 @@ pub mod board {
 
         fn moves_from_source_bitboard(&self, to: Square, mut possible_sources: BitBoard) -> Vec<Move> {
             let mut moves: Vec<Move> = vec!();
-            while possible_sources.0 != 0 {
+            while possible_sources != 0 {
                 let move_id = possible_sources.0.trailing_zeros();
                 let from = Square(move_id as BoardIndex);
                 possible_sources = possible_sources.toggle(from);
@@ -1037,48 +969,127 @@ pub mod board {
             moves
         }
 
-        fn create_moves(&self, from: Square, to: Square, moves: &mut Vec<Move>) {
-            let from_piece = self.board[from.0].expect("From piece must exist");
-            let piece_move = match self.board[to.0] {
+        pub fn create_moves(&self, from: Square, to: Square, moves: &mut Vec<Move>) {
+            let from_piece = self.board[from].expect("From piece must exist");
+            match self.board[to] {
                 Some(Piece{piece_type, color}) => match from_piece.piece_type {
-                    PieceType::PAWN => match from_piece.color {
-                        WHITE if to.rank() == RANK_SIZE - 1 => Move { from, to, move_type: MoveAction::Promotion(QUEEN, Some(piece_type)) },
-                        BLACK if to.rank() == 0 => Move { from, to, move_type: MoveAction::Promotion(QUEEN, Some(piece_type)) },
-                        _ => Move { from, to, move_type: MoveAction::Capture(piece_type, to) }
+                    PieceType::PAWN if (from_piece.color == WHITE && to.rank() == 7) || (from_piece.color == BLACK && to.rank() == 0) => {
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(QUEEN, Some(piece_type)), previous_ep_square: self.en_passant_square });
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(KNIGHT, Some(piece_type)), previous_ep_square: self.en_passant_square });
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(ROOK, Some(piece_type)), previous_ep_square: self.en_passant_square });
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(BISHOP, Some(piece_type)), previous_ep_square: self.en_passant_square });
                     }
-                    _ => Move { from, to, move_type: MoveAction::Capture(piece_type, to) }
+                    _ => moves.push(Move { from, to, move_type: MoveAction::Capture(piece_type), previous_ep_square: self.en_passant_square })
                 },
                 None => match from_piece.piece_type {
                     PieceType::PAWN => match self.en_passant_square {
-                        Some(ep_sqr) if ep_sqr == to => Move { from, to, move_type: MoveAction::Capture(from_piece.piece_type, ep_sqr)},
-                        _ => match from_piece.color {
-                            WHITE if to.rank() == RANK_SIZE - 1 => Move { from, to, move_type: MoveAction::Promotion(QUEEN, None) },
-                            BLACK if to.rank() == 0 => Move { from, to, move_type: MoveAction::Promotion(QUEEN, None) },
-                            _ => Move { from, to, move_type: MoveAction::Normal }
+                        Some(ep_sqr) if ep_sqr == to => {
+                            let king_square = Square((self.active_color_mask() & self.kings).0.trailing_zeros() as BoardIndex);
+                            if king_square.rank() == from.rank() {
+                                let attacker_dir = king_square.direction_between(&from);
+                                let mut file = king_square.file() as isize + attacker_dir.0;
+                                while file < 8 && file >= 0 {
+                                    if file == to.file() as isize || file == from.file() as isize {
+                                        file += attacker_dir.0;
+                                        continue;
+                                    }
+                                    match self.board[Square::new(file as usize, king_square.rank())] {
+                                        None => file += attacker_dir.0,
+                                        Some(Piece{color, piece_type: ROOK}) | Some(Piece{color, piece_type: QUEEN}) if color == !self.active_player => return,
+                                        _ => break
+                                    }
+                                }
+                            }
+                            moves.push(Move { from, to, move_type: MoveAction::EnPassant, previous_ep_square: self.en_passant_square })
+                        },
+                        _ if (from_piece.color == WHITE && to.rank() == 7) || (from_piece.color == BLACK && to.rank() == 0) => {
+                            moves.push(Move { from, to, move_type: MoveAction::Promotion(QUEEN, None), previous_ep_square: self.en_passant_square });
+                            moves.push(Move { from, to, move_type: MoveAction::Promotion(KNIGHT, None), previous_ep_square: self.en_passant_square });
+                            moves.push(Move { from, to, move_type: MoveAction::Promotion(ROOK, None), previous_ep_square: self.en_passant_square });
+                            moves.push(Move { from, to, move_type: MoveAction::Promotion(BISHOP, None), previous_ep_square: self.en_passant_square });
                         }
+                        _ => moves.push(Move { from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square}),
                     },
                     PieceType::KING => match self.current_castle_options() {
-                        (Some(castle_sqr), _) if to == castle_sqr => Move{from, to, move_type: MoveAction::Castle(to)},
-                        (_, Some(castle_sqr)) if to == castle_sqr => Move{from, to, move_type: MoveAction::Castle(to)},
-                        _ => Move{from, to, move_type: MoveAction::Normal}
+                        (Some(castle_sqr), _) if to == castle_sqr && castle_sqr.rank() == 0 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(3, 0)), previous_ep_square: self.en_passant_square}),
+                        (Some(castle_sqr), _) if to == castle_sqr && castle_sqr.rank() == 7 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(3, 7)), previous_ep_square: self.en_passant_square}),
+                        (_, Some(castle_sqr)) if to == castle_sqr && castle_sqr.rank() == 0 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(5, 0)), previous_ep_square: self.en_passant_square}),
+                        (_, Some(castle_sqr)) if to == castle_sqr && castle_sqr.rank() == 7 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(5, 7)), previous_ep_square: self.en_passant_square}),
+                        _ => moves.push(Move{from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square})
                     }
-                    _ => Move{from, to, move_type: MoveAction::Normal}
+                    _ => moves.push(Move{from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square})
                 },
             };
-            moves.push(piece_move);
         }
 
         fn current_castle_options(&self) -> (Option<Square>, Option<Square>) {
             let (options, (s1, s2)) = match self.active_player {
-                WHITE => (self.castling_options_white, CASTLING_SQUARES_WHITE),
-                BLACK => (self.castling_options_black, CASTLING_SQUARES_BLACK)
+                WHITE => (&self.castling_options_white, CASTLING_SQUARES_WHITE),
+                BLACK => (&self.castling_options_black, CASTLING_SQUARES_BLACK)
             };
             match options {
-                (true, true) => (Some(s1), Some(s2)),
-                (true, false) => (Some(s1), None),
-                (false, true) => (None, Some(s2)),
-                (false, false) => (None, None),
+                (CastleState::Allowed, CastleState::Allowed) => (Some(s1), Some(s2)),
+                (CastleState::Allowed, CastleState::Forbidden(_)) => (Some(s1), None),
+                (CastleState::Forbidden(_), CastleState::Allowed) => (None, Some(s2)),
+                (CastleState::Forbidden(_), CastleState::Forbidden(_)) => (None, None),
             }
+        }
+
+        pub fn to_fen(&self) -> String {
+            let mut fen = "".to_string();
+            for rank in (0..8).rev() {
+                let mut empty_counter = 0;
+                for file in 0..8 {
+                    if let Some(piece) = self.board[Square::new(file, rank)] {
+                        if empty_counter > 0 {
+                            fen.push_str(empty_counter.to_string().as_str());
+                            empty_counter = 0;
+                        }
+                        fen.push(piece.into());
+                    } else {
+                        empty_counter += 1;
+                    }
+                }
+                if empty_counter > 0 {
+                    fen.push_str(empty_counter.to_string().as_str())
+                }
+                if rank != 0 {
+                    fen.push('/');
+                }
+            }
+            fen.push(' ');
+            fen.push_str(match self.active_player {
+                WHITE => "w ",
+                BLACK => "b "
+            });
+            let mut castle_opts = "".to_string();
+            castle_opts.push_str(match self.castling_options_white {
+                (CastleState::Allowed, CastleState::Allowed) => "KQ",
+                (CastleState::Allowed, CastleState::Forbidden(_)) => "Q",
+                (CastleState::Forbidden(_), CastleState::Allowed) => "K",
+                (CastleState::Forbidden(_), CastleState::Forbidden(_)) => ""
+            });
+            castle_opts.push_str(match self.castling_options_black {
+                (CastleState::Allowed, CastleState::Allowed) => "kq",
+                (CastleState::Allowed, CastleState::Forbidden(_)) => "q",
+                (CastleState::Forbidden(_), CastleState::Allowed) => "k",
+                (CastleState::Forbidden(_), CastleState::Forbidden(_)) => ""
+            });
+            if castle_opts.is_empty() {
+                castle_opts.push_str("-");
+            }
+            fen.push_str(castle_opts.as_str());
+            fen.push_str(" ");
+            fen.push_str(match self.en_passant_square {
+                Some(ep_square) => Into::<String>::into(ep_square),
+                None => "-".to_string()
+            }.as_str());
+            fen.push_str(" ");
+            fen.push_str(self.halfmove_clock.to_string().as_str());
+            fen.push_str(" ");
+            fen.push_str(self.fullmove.to_string().as_str());
+
+            fen
         }
 
         pub fn from_fen(fen: String) -> Option<Self> {
@@ -1099,7 +1110,7 @@ pub mod board {
             let mut kings: (Square, Square) = (Square::new(FILE_SIZE, 0), Square::new(FILE_SIZE, 0));
             for file in 0..FILE_SIZE {
                 for rank in 0..RANK_SIZE {
-                    match pieces[Square::new(file, rank).0] {
+                    match pieces[Square::new(file, rank)] {
                         Some(Piece{piece_type: PieceType::KING, color: Color::WHITE}) => {
                             kings = (Square::new(file, rank), kings.1);
                         },
@@ -1134,18 +1145,18 @@ pub mod board {
             }
         }
 
-        fn parse_castling_options(castle_string: &str) -> Option<[(bool, bool); 2]> {
-            let mut castling_white = (false, false);
-            let mut castling_black = (false, false);
+        fn parse_castling_options(castle_string: &str) -> Option<[(CastleState, CastleState); 2]> {
+            let mut castling_white = (Forbidden(0), Forbidden(0));
+            let mut castling_black = (Forbidden(0), Forbidden(0));
             if castle_string == "-" {
                 return Some([castling_white, castling_black]);
             }
             for c in castle_string.chars() {
                 match c {
-                    'K' => castling_white = (true, castling_white.1),
-                    'Q' => castling_white = (castling_white.0, true),
-                    'k' => castling_black = (true, castling_black.1),
-                    'q' => castling_black = (castling_black.0, true),
+                    'Q' => castling_white = (Allowed, castling_white.1),
+                    'K' => castling_white = (castling_white.0, Allowed),
+                    'q' => castling_black = (Allowed, castling_black.1),
+                    'k' => castling_black = (castling_black.0, Allowed),
                     _ => return None,
                 }
             }
@@ -1180,7 +1191,7 @@ pub mod board {
                         _ => return None
                     };
                     let square = Square::new(column_index, 7 - line_index);
-                    pieces[square.0] = Some(piece);
+                    pieces[square] = Some(piece);
                     column_index += 1;
                 }
                 if column_index > 8 {
@@ -1199,7 +1210,7 @@ pub mod board {
                         print!("x");
                         continue;
                     }
-                    match self.board[sqr.0] {
+                    match self.board[sqr] {
                         Some(piece) => print!("{}", piece),
                         None => print!(".")
                     };
@@ -1209,21 +1220,4 @@ pub mod board {
             println!("{} {}", self.halfmove_clock, self.fullmove)
         }
     }
-}
-
-#[cfg(test)]
-mod check_test {
-    use crate::board::board::{Board, PieceType};
-    use crate::board::board::Color;
-    use crate::board::board::positional::{Move, Square};
-    use crate::board::board::positional::MoveAction::Promotion;
-    use crate::board::pieces::PawnIterator;
-
-    #[test]
-    fn a() {
-        let board = Board::from_fen("4k3/8/8/1p4pp/8/4q3/1K5q/8 w - - 18 141".to_string()).unwrap();
-        assert!(board.is_in_check(&Color::WHITE));
-        assert!(!board.is_in_check(&Color::BLACK));
-    }
-
 }
