@@ -1,5 +1,6 @@
 pub mod board {
     use std::any::type_name;
+    use std::arch::x86_64::{__m128i, __m256i, _mm256_and_si256, _mm256_or_si256, _mm256_set_epi64x, _mm256_sllv_epi64, _mm256_srlv_epi64, _mm256_storeu_si256, _mm_and_si128, _mm_or_si128, _mm_set_epi64x, _mm_sllv_epi64, _mm_srlv_epi64, _mm_store_si128};
     use std::cmp::{max, min};
     use std::convert::{Into, TryFrom};
     use std::ffi::c_int;
@@ -11,7 +12,7 @@ pub mod board {
 
     use itertools::Itertools;
 
-    use crate::bitboard::{BitBoard, DIAGONALS_NE_SW, DIAGONALS_NW_SE, FILES, KING_MOVES, KNIGHT_MOVES, PAWN_CAPTURE_MOVES_BLACK, PAWN_CAPTURE_MOVES_WHITE, PAWN_MOVES_BLACK, PAWN_MOVES_WHITE, RANKS};
+    use crate::bitboard::{BISHOP_MOVES, BitBoard, DIAGONALS_NE_SW, DIAGONALS_NW_SE, FILES, KING_MOVES, KNIGHT_MOVES, PAWN_CAPTURE_MOVES_BLACK, PAWN_CAPTURE_MOVES_WHITE, PAWN_MOVES_BLACK, PAWN_MOVES_WHITE, RANKS, ROOK_MOVES};
     use crate::board::board::CastleState::{Allowed, Forbidden};
     use crate::piece::*;
     use crate::piece::PieceType::*;
@@ -391,55 +392,79 @@ pub mod board {
             // self.print_highlighted(king_danger_squares);
 
             if king_danger_squares & king_square != 0 {
-                let attackers = self.generate_attacker_squares(king_square);
-                return self.generate_king_danger_moves(king_square, king_danger_squares, attackers);
+                return self.generate_king_danger_moves(king_square, king_danger_squares);
             }
             let pin_mask = self.generate_pin_mask(king_square, self.active_player);
 
+            if pin_mask.0 != self.generate_pin_mask_avx(king_square, self.active_player).0 {
+                println!("Diff");
+                println!("{}", self.to_fen());
+                println!("{}", pin_mask);
+                println!("{}", self.generate_pin_mask_avx(king_square, self.active_player));
+                panic!()
+            }
+
             let mut moves: Vec<Move> = vec!();
-            for sqr in self.active_color_mask() {
-                let mut move_mask = self.generate_move_squares_by_piece(sqr, self.active_player, king_danger_squares);
-                if let Some(Piece{piece_type: KING, color: _}) = self.board[sqr] {
-                    move_mask = move_mask & !king_danger_squares;
-                }
-                else if pin_mask.is_set(sqr) {
-                    let partial_pin_mask = match king_square.direction_between(&sqr) {
-                        (1, 0) | (-1, 0) => RANKS[sqr.rank()],
-                        (0, 1) | (0, -1) => FILES[sqr.file()],
-                        (1, 1) | (-1,-1) => DIAGONALS_NW_SE[sqr],
-                        (1,-1) | (-1, 1) => DIAGONALS_NE_SW[sqr],
-                        _ => panic!()
-                    };
-                    move_mask &= partial_pin_mask;
-                }
+
+            //Checking once if the pin mask is set is probably slightly faster, but it would duplicate the entire loop block below
+            for sqr in self.active_color_mask() & self.rooks {
+                let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player);
+                move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
+            for sqr in self.active_color_mask() & self.bishops {
+                let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player);
+                move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            }
+            for sqr in self.active_color_mask() & self.queens {
+                let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player);
+                move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            }
+            for sqr in self.active_color_mask() & self.knights {
+                if pin_mask.is_set(sqr) {
+                    continue;
+                }
+                let move_mask = KNIGHT_MOVES[sqr] & !self.active_color_mask();
+                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            }
+            let ep_mask = self.en_passant_square
+                .map(| sqr| BitBoard::from(sqr))
+                .unwrap_or(BitBoard(0));
+            if self.active_player == WHITE {
+                for sqr in self.white & self.pawns {
+                    let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask);
+                    move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                    moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                }
+            }
+            else {
+                for sqr in self.black & self.pawns {
+                    let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask);
+                    move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                    moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                }
+            }
+            let move_mask = self.generate_king_moves(king_square, king_danger_squares) & !king_danger_squares;
+            moves.append(&mut self.moves_from_target_bitboard(king_square, move_mask));
+
             moves
         }
 
-        fn generate_king_danger_moves(&self, king_square: Square, king_danger_squares: BitBoard, attackers: BitBoard) -> Vec<Move> {
+        fn generate_king_danger_moves(&self, king_square: Square, king_danger_squares: BitBoard) -> Vec<Move> {
             let mut moves: Vec<Move> = vec!();
 
             let evasive_king_moves = KING_MOVES[king_square] & !king_danger_squares & !self.active_color_mask();
             moves.append(&mut self.moves_from_target_bitboard(king_square, evasive_king_moves));
 
             //Double check, the king can only run away
+            let attackers = self.generate_attacker_squares(king_square);
             if attackers.0.count_ones() > 1 {
                 return moves;
             }
 
             let attacker_square = Square(attackers.0.trailing_zeros() as BoardIndex);
-
-            // let knight_capture_moves = KNIGHT_MOVES[attackers.0 as usize] & self.knights & self.active_color_mask();
-            // //To check if we can capture the attacker with a pawn, we try to capture from the attackers square with an opposite colored pawn
-            // let pawn_capture_moves = if self.active_player == WHITE {
-            //     PAWN_CAPTURE_MOVES_BLACK[attackers.0 as usize] & self.pawns & self.white
-            // } else {
-            //     PAWN_CAPTURE_MOVES_WHITE[attackers.0 as usize] & self.pawns & self.black
-            // };
-
-            // moves.append(&mut self.moves_from_source_bitboard(attacker_square, knight_capture_moves));
-            // moves.append(&mut self.moves_from_source_bitboard(attacker_square, pawn_capture_moves));
 
             // println!("Attackers");
             // self.print_highlighted(attackers);
@@ -468,34 +493,61 @@ pub mod board {
                 }
             }
 
-            //TODO[perf]: We can skip knights and pawns here because for those we can calculate the capture directly. Maybe it helps. Doesn't necessarily work for blocks though
-            for sqr in self.active_color_mask() & !self.kings {
-                //Generate moves and only accept moves that end on attacker squares
-                let mut move_mask = self.generate_move_squares_by_piece(sqr, self.active_player, king_danger_squares);
-
-                if let Some(Piece{piece_type: PAWN, color}) = self.board[sqr] {
-                    move_mask &= (check_prevention_mask | ep_check_capture_mask);
-                } else {
-                    move_mask &= check_prevention_mask;
-                }
-
-                if move_mask == 0 {
-                    continue;
-                }
-                if pin_mask.is_set(sqr) {
-                    let partial_pin_mask = match king_square.direction_between(&sqr) {
-                        (1, 0) | (-1, 0) => RANKS[sqr.rank()],
-                        (0, 1) | (0, -1) => FILES[sqr.file()],
-                        (1, 1) | (-1,-1) => DIAGONALS_NW_SE[sqr],
-                        (1,-1) | (-1, 1) => DIAGONALS_NE_SW[sqr],
-                        _ => panic!()
-                    };
-                    move_mask &= partial_pin_mask;
-                }
+            for sqr in self.active_color_mask() & self.rooks {
+                let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & check_prevention_mask;
+                move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
-
+            for sqr in self.active_color_mask() & self.bishops {
+                let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & check_prevention_mask;
+                move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            }
+            for sqr in self.active_color_mask() & self.queens {
+                let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & check_prevention_mask;
+                move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            }
+             for sqr in self.active_color_mask() & self.knights {
+                 if pin_mask.is_set(sqr) {
+                     continue;
+                 }
+                 let move_mask = KNIGHT_MOVES[sqr] & !self.active_color_mask() & check_prevention_mask;
+                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+             }
+            let ep_mask = self.en_passant_square
+                .map(| sqr| BitBoard::from(sqr))
+                .unwrap_or(BitBoard(0));
+            let pawn_check_prevention_mask= check_prevention_mask | ep_check_capture_mask;
+            if self.active_player == WHITE {
+                for sqr in self.white & self.pawns {
+                    let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & pawn_check_prevention_mask;
+                    move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                    moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                }
+            }
+            else {
+                for sqr in self.black & self.pawns {
+                    let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & pawn_check_prevention_mask;
+                    move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
+                    moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                }
+            }
             moves
+        }
+
+        fn calculate_partial_pin_mask(piece_square: Square, king_square: Square, pin_mask: BitBoard) -> BitBoard {
+            if pin_mask.is_set(piece_square) {
+                match king_square.direction_between(&piece_square) {
+                    (1, 0) | (-1, 0) => RANKS[piece_square.rank()],
+                    (0, 1) | (0, -1) => FILES[piece_square.file()],
+                    (1, 1) | (-1, -1) => DIAGONALS_NW_SE[piece_square],
+                    (1, -1) | (-1, 1) => DIAGONALS_NE_SW[piece_square],
+                    _ => panic!()
+                }
+            } else {
+                BitBoard(0xFFFFFFFFFFFFFFFF)
+            }
         }
 
         fn ray_between_squares_exclusive(from: Square, to: Square) -> BitBoard {
@@ -533,68 +585,54 @@ pub mod board {
             ray_mask
         }
 
-        fn generate_move_squares_by_piece(&self, sqr: Square, color_to_move: Color, king_danger_squares: BitBoard) -> BitBoard {
-            match self.board[sqr] {
-                None => BitBoard(0),
-                Some(Piece{piece_type: _, color}) if color != color_to_move => BitBoard(0),
-                Some(Piece{piece_type, color }) => match piece_type {
-                    PieceType::KING => {
-                        let mut king_moves = KING_MOVES[sqr] & !self.mask_for_color(color_to_move);
-                        let no_castle_squares = king_danger_squares | ((self.white | self.black) ^ self.kings);
-                        if let (Some(c_square), _) = self.current_castle_options() {
-                            let rook_passing_square = Square::new((c_square.file() as isize + sqr.direction_between(&c_square).0) as usize, c_square.rank());
-                            if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 && self.board[rook_passing_square] == None {
-                                king_moves |= c_square;
-                            }
-                        }
-                        if let (_, Some(c_square)) = self.current_castle_options() {
-                            if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 {
-                                king_moves |= c_square;
-                            }
-                        }
-                        king_moves
-                    }
-                    PieceType::KNIGHT => KNIGHT_MOVES[sqr] & !self.mask_for_color(color_to_move),
-                    PieceType::PAWN if color_to_move == WHITE => {
-                        let ep_mask = self.en_passant_square
-                            .map(| sqr| BitBoard::from(sqr))
-                            .unwrap_or(BitBoard(0));
-                        let mut pawn_moves = PAWN_CAPTURE_MOVES_WHITE[sqr] & (self.mask_for_color(!color_to_move) | ep_mask);
-                        let push_sqr = Square::new(sqr.file(), sqr.rank() + 1);
-                        if self.board[push_sqr].is_none() {
-                            pawn_moves |= push_sqr;
-                            if sqr.rank() == 1 {
-                                let push_sqr = Square::new(sqr.file(), sqr.rank() + 2);
-                                if self.board[push_sqr].is_none() {
-                                    pawn_moves |= push_sqr;
-                                }
-                            }
-                        }
-                        pawn_moves
-                    }
-                    PieceType::PAWN => {
-                        let ep_mask = self.en_passant_square
-                            .map(| sqr| BitBoard::from(sqr))
-                            .unwrap_or(BitBoard(0));
-                        let mut pawn_moves = PAWN_CAPTURE_MOVES_BLACK[sqr] & (self.mask_for_color(!color_to_move) | ep_mask);
-                        let push_sqr = Square::new(sqr.file(), sqr.rank() - 1);
-                        if self.board[push_sqr].is_none() {
-                            pawn_moves |= push_sqr;
-                            if sqr.rank() == 6 {
-                                let push_sqr = Square::new(sqr.file(), sqr.rank() - 2);
-                                if self.board[push_sqr].is_none() && sqr.rank() == 6 {
-                                    pawn_moves |= push_sqr;
-                                }
-                            }
-                        }
-                        pawn_moves
-                    },
-                    PieceType::ROOK => self.generate_rook_moves_ks(sqr, color),
-                    PieceType::BISHOP => self.generate_bishop_moves_ks(sqr, color),
-                    PieceType::QUEEN => self.generate_queen_moves_ks(sqr, color),
+        //TODO simdify?
+        fn generate_pawn_moves_squares_white(&self, sqr: Square, ep_mask: BitBoard) -> BitBoard {
+            let free = !(self.white | self.black);
+            let mut push_mask = BitBoard::from(sqr) << 8 & free;
+            push_mask |= push_mask << 8 & free & RANKS[3];
+            push_mask | (PAWN_CAPTURE_MOVES_WHITE[sqr] & (self.black | ep_mask))
+        }
+
+        fn generate_pawn_moves_squares_black(&self, sqr: Square, ep_mask: BitBoard) -> BitBoard {
+            let free = !(self.white | self.black);
+            let mut push_mask = BitBoard::from(sqr) >> 8 & free;
+            push_mask |= push_mask >> 8 & free & RANKS[4];
+            push_mask | (PAWN_CAPTURE_MOVES_BLACK[sqr] & (self.white | ep_mask))
+        }
+
+        fn generate_king_moves(&self, sqr: Square, king_danger_squares: BitBoard) -> BitBoard {
+            let mut king_moves = KING_MOVES[sqr] & !self.mask_for_color(self.active_player);
+            let no_castle_squares = king_danger_squares | ((self.white | self.black) ^ self.kings);
+            if let (Some(c_square), _) = self.current_castle_options() {
+                let rook_passing_square = Square::new((c_square.file() as isize + sqr.direction_between(&c_square).0) as usize, c_square.rank());
+                if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 && self.board[rook_passing_square] == None {
+                    king_moves |= c_square;
                 }
             }
+            if let (_, Some(c_square)) = self.current_castle_options() {
+                if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 {
+                    king_moves |= c_square;
+                }
+            }
+            king_moves
         }
+
+        // fn generate_pin_mask_avx(&self, sqr: Square, pinned_color: Color) -> BitBoard {
+        //     println!("{}", self);
+        //     let king_mask = BitBoard::from(sqr);
+        //     let mut free = !(self.white | self.black);
+        //     let first_hit_pieces = self.ks_queen_moves(free, king_mask) & self.mask_for_color(pinned_color);
+        //     self.print_highlighted(first_hit_pieces);
+        //     free |= first_hit_pieces;
+        //     self.print_highlighted(free);
+        //     let second_hit_pieces = self.ks_queen_moves(free, king_mask);
+        //     self.print_highlighted(second_hit_pieces);
+        //     let potential_attackers = self.ks_queen_moves(free, king_mask) & self.mask_for_color(!pinned_color);
+        //     self.print_highlighted(potential_attackers);
+        //     let bq_attackers = (potential_attackers & BISHOP_MOVES[sqr] & (self.bishops | self.queens));
+        //     let rq_attackers = (potential_attackers & ROOK_MOVES[sqr] & (self.rooks | self.queens));
+        //     rq_attackers | bq_attackers
+        // }
 
         fn generate_pin_mask(&self, sqr: Square, pinned_color: Color) -> BitBoard {
             self.generate_pin_mask_rq(sqr, pinned_color) | self.generate_pin_mask_bq(sqr, pinned_color)
@@ -818,106 +856,179 @@ pub mod board {
             danger_mask | self.ks_bishop_moves(!occlusion_mask, (self.bishops | self.queens) & opponent_color_mask)
         }
 
-        fn ks_rook_moves(&self, propagate_mask: BitBoard, rook_sliders: BitBoard) -> BitBoard {
-            let n = Board::kogge_stone_north(rook_sliders, propagate_mask) << 8;
-            let e = Board::kogge_stone_east(rook_sliders, propagate_mask) << 1 & !FILES[0];
-            let s = Board::kogge_stone_south(rook_sliders, propagate_mask) >> 8;
-            let w = Board::kogge_stone_west(rook_sliders, propagate_mask) >> 1 & !FILES[7];
-
-            n | e | s | w
+        pub fn ks_rook_moves(&self, propagate_mask: BitBoard, rook_sliders: BitBoard) -> BitBoard {
+            unsafe {
+                Board::kogge_stone_north_east(rook_sliders, propagate_mask) | Board::kogge_stone_south_west(rook_sliders, propagate_mask)
+            }
         }
 
-        fn ks_bishop_moves(&self, propagate_mask: BitBoard, bishop_sliders: BitBoard) -> BitBoard {
-            let ne = Board::kogge_stone_north_east(bishop_sliders, propagate_mask) << 9 & !FILES[0];
-            let nw = Board::kogge_stone_north_west(bishop_sliders, propagate_mask) << 7 & !FILES[7];
-            let se = Board::kogge_stone_south_east(bishop_sliders, propagate_mask) >> 7 & !FILES[0];
-            let sw = Board::kogge_stone_south_west(bishop_sliders, propagate_mask) >> 9 & !FILES[7];
-
-            ne | nw | se | sw
+        pub fn ks_bishop_moves(&self, propagate_mask: BitBoard, bishop_sliders: BitBoard) -> BitBoard {
+            unsafe {
+                Board::kogge_stone_north_ew(bishop_sliders, propagate_mask) | Board::kogge_stone_south_ew(bishop_sliders, propagate_mask)
+            }
         }
 
-        fn kogge_stone_south(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            gen |= pro & (gen >>  8);
-            pro &=       (pro >>  8);
-            gen |= pro & (gen >> 16);
-            pro &=       (pro >> 16);
-            gen | (pro & (gen >> 32))
+        pub fn ks_queen_moves(&self, propagate_mask: BitBoard, queen_sliders: BitBoard) -> BitBoard {
+            unsafe {
+                Board::kogge_stone_rshift_avx2(queen_sliders, propagate_mask) | Board::kogge_stone_lshift_avx2(queen_sliders, propagate_mask)
+            }
         }
 
-        fn kogge_stone_north(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            gen |= pro & (gen <<  8);
-            pro &=       (pro <<  8);
-            gen |= pro & (gen << 16);
-            pro &=       (pro << 16);
-            gen |= pro & (gen << 32);
-            gen
+        #[target_feature(enable = "avx2")]
+        unsafe fn kogge_stone_rshift_avx2(gen: BitBoard, pro: BitBoard) -> BitBoard {
+            let s1 = _mm256_set_epi64x(8, 1, 7, 9);
+            let s2 = _mm256_set_epi64x(16, 2, 14, 18);
+            let s3 = _mm256_set_epi64x(32, 4, 28, 36);
+            let file_mask = _mm256_set_epi64x(-1 , !FILES[7].0 as i64, !FILES[0].0 as i64, !FILES[7].0 as i64);
+
+            let mut gen = _mm256_set_epi64x(gen.0 as i64, gen.0 as i64, gen.0 as i64, gen.0 as i64);
+            let mut pro = _mm256_set_epi64x(pro.0 as i64, pro.0 as i64, pro.0 as i64, pro.0 as i64);
+            pro = _mm256_and_si256(pro, file_mask);
+
+            gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_srlv_epi64(gen, s1)));
+            pro = _mm256_and_si256(pro, _mm256_srlv_epi64(pro, s1));
+            gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_srlv_epi64(gen, s2)));
+            pro = _mm256_and_si256(pro, _mm256_srlv_epi64(pro, s2));
+            gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_srlv_epi64(gen, s3)));
+
+            gen = _mm256_and_si256(_mm256_srlv_epi64(gen, s1), file_mask);
+
+            let mut back_key = [0u64; 4];
+            _mm256_storeu_si256(back_key.as_mut_ptr() as *mut __m256i, gen);
+            BitBoard(back_key[0] | back_key[1] | back_key[2] | back_key[3])
         }
 
-        fn kogge_stone_east(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            pro &= !FILES[0];
-            gen |= pro & (gen << 1);
-            pro &=       (pro << 1);
-            gen |= pro & (gen << 2);
-            pro &=       (pro << 2);
-            gen | (pro & (gen << 4))
+        #[target_feature(enable = "avx2")]
+        unsafe fn kogge_stone_lshift_avx2(gen: BitBoard, pro: BitBoard) -> BitBoard {
+            let s1 = _mm256_set_epi64x(8, 1, 7, 9);
+            let s2 = _mm256_set_epi64x(16, 2, 14, 18);
+            let s3 = _mm256_set_epi64x(32, 4, 28, 36);
+            let file_mask = _mm256_set_epi64x(-1, !FILES[0].0 as i64, !FILES[7].0 as i64, !FILES[0].0 as i64);
+
+            let mut gen = _mm256_set_epi64x(gen.0 as i64, gen.0 as i64, gen.0 as i64, gen.0 as i64);
+            let mut pro = _mm256_set_epi64x(pro.0 as i64, pro.0 as i64, pro.0 as i64, pro.0 as i64);
+            pro = _mm256_and_si256(pro, file_mask);
+
+            gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_sllv_epi64(gen, s1)));
+            pro = _mm256_and_si256(pro, _mm256_sllv_epi64(pro, s1));
+            gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_sllv_epi64(gen, s2)));
+            pro = _mm256_and_si256(pro, _mm256_sllv_epi64(pro, s2));
+            gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_sllv_epi64(gen, s3)));
+
+            gen = _mm256_and_si256(_mm256_sllv_epi64(gen, s1), file_mask);
+
+            let mut back_key = [0u64; 4];
+            _mm256_storeu_si256(back_key.as_mut_ptr() as *mut __m256i, gen);
+            BitBoard(back_key[0] | back_key[1] | back_key[2] | back_key[3])
         }
 
-        fn kogge_stone_west(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            pro &= !FILES[7];
-            gen |= pro & (gen >> 1);
-            pro &=       (pro >> 1);
-            gen |= pro & (gen >> 2);
-            pro &=       (pro >> 2);
-            gen | (pro & (gen >> 4))
+
+        #[target_feature(enable = "avx2")]
+        unsafe fn kogge_stone_south_west(gen: BitBoard, pro: BitBoard) -> BitBoard {
+            let s1 = _mm_set_epi64x(8, 1);
+            let s2 = _mm_set_epi64x(16, 2);
+            let s3 = _mm_set_epi64x(32, 4);
+            let file_mask = _mm_set_epi64x(-1 , !FILES[7].0 as i64);
+
+            let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
+            let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
+            pro = _mm_and_si128(pro, file_mask);
+
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s1)));
+            pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s1));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s2)));
+            pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s2));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s3)));
+
+            gen = _mm_and_si128(_mm_srlv_epi64(gen, s1), file_mask);
+
+            let mut back_key = [0u64; 2];
+            _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
+            BitBoard(back_key[0] | back_key[1])
         }
 
-        fn kogge_stone_north_east(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            pro &= !FILES[0];
-            gen |= pro & (gen <<  9);
-            pro &=       (pro <<  9);
-            gen |= pro & (gen << 18);
-            pro &=       (pro << 18);
-            gen | (pro & (gen << 36))
+        #[target_feature(enable = "avx2")]
+        unsafe fn kogge_stone_north_east(gen: BitBoard, pro: BitBoard) -> BitBoard {
+            let s1 = _mm_set_epi64x(8, 1);
+            let s2 = _mm_set_epi64x(16, 2);
+            let s3 = _mm_set_epi64x(32, 4);
+            let file_mask = _mm_set_epi64x(-1 , !FILES[0].0 as i64);
+
+            let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
+            let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
+            pro = _mm_and_si128(pro, file_mask);
+
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s1)));
+            pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s1));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s2)));
+            pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s2));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s3)));
+
+            gen = _mm_and_si128(_mm_sllv_epi64(gen, s1), file_mask);
+
+            let mut back_key = [0u64; 2];
+            _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
+            BitBoard(back_key[0] | back_key[1])
         }
 
-        fn kogge_stone_south_east(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            pro &= !FILES[0];
-            gen |= pro & (gen >>  7);
-            pro &=       (pro >>  7);
-            gen |= pro & (gen >> 14);
-            pro &=       (pro >> 14);
-            gen | (pro & (gen >> 28))
+        #[target_feature(enable = "avx2")]
+        unsafe fn kogge_stone_south_ew(gen: BitBoard, pro: BitBoard) -> BitBoard {
+            let s1 = _mm_set_epi64x(7, 9);
+            let s2 = _mm_set_epi64x(14,  18);
+            let s3 = _mm_set_epi64x(28, 36);
+            let file_mask = _mm_set_epi64x(!FILES[0].0 as i64 , !FILES[7].0 as i64);
+
+            let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
+            let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
+            pro = _mm_and_si128(pro, file_mask);
+
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s1)));
+            pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s1));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s2)));
+            pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s2));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s3)));
+
+            gen = _mm_and_si128(_mm_srlv_epi64(gen, s1), file_mask);
+
+            let mut back_key = [0u64; 2];
+            _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
+            BitBoard(back_key[0] | back_key[1])
         }
 
-        fn kogge_stone_south_west(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            pro &= !FILES[7];
-            gen |= pro & (gen >>  9);
-            pro &=       (pro >>  9);
-            gen |= pro & (gen >> 18);
-            pro &=       (pro >> 18);
-            gen | (pro & (gen >> 36))
-        }
+        #[target_feature(enable = "avx2")]
+        unsafe fn kogge_stone_north_ew(gen: BitBoard, pro: BitBoard) -> BitBoard {
+            let s1 = _mm_set_epi64x(7, 9);
+            let s2 = _mm_set_epi64x(14,  18);
+            let s3 = _mm_set_epi64x(28, 36);
+            let file_mask = _mm_set_epi64x(!FILES[7].0 as i64 , !FILES[0].0 as i64);
 
-        fn kogge_stone_north_west(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
-            pro &= !FILES[7];
-            gen |= pro & (gen <<  7);
-            pro &=       (pro <<  7);
-            gen |= pro & (gen << 14);
-            pro &=       (pro << 14);
-            gen | (pro & (gen << 28))
-        }
+            let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
+            let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
+            pro = _mm_and_si128(pro, file_mask);
 
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s1)));
+            pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s1));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s2)));
+            pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s2));
+            gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s3)));
+
+            gen = _mm_and_si128(_mm_sllv_epi64(gen, s1), file_mask);
+
+            let mut back_key = [0u64; 2];
+            _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
+            BitBoard(back_key[0] | back_key[1])
+        }
 
         fn generate_rook_moves_ks(&self, sqr: Square, rook_color: Color) -> BitBoard {
-            self.ks_rook_moves(!(self.white | self.black), BitBoard(1 << sqr.0 as usize)) & !self.mask_for_color(rook_color)
+            self.ks_rook_moves(!(self.white | self.black), BitBoard::from(sqr)) & !self.mask_for_color(rook_color)
         }
 
         fn generate_bishop_moves_ks(&self, sqr: Square, rook_color: Color) -> BitBoard {
-            self.ks_bishop_moves(!(self.white | self.black), BitBoard(1 << sqr.0 as usize)) & !self.mask_for_color(rook_color)
+            self.ks_bishop_moves(!(self.white | self.black), BitBoard::from(sqr)) & !self.mask_for_color(rook_color)
         }
 
         fn generate_queen_moves_ks(&self, sqr: Square, queen_color: Color) -> BitBoard {
-            self.generate_bishop_moves_ks(sqr, queen_color) | self.generate_rook_moves_ks(sqr, queen_color)
+            self.ks_queen_moves(!(self.white | self.black), BitBoard::from(sqr)) & !self.mask_for_color(queen_color)
         }
 
         fn moves_from_target_bitboard(&self, from: Square, mut possible_targets: BitBoard) -> Vec<Move> {

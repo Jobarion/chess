@@ -39,10 +39,18 @@ fn main() {
                 .default_value(""))
         .get_matches();
     let fen = matches.value_of("fen");
-    let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
-    // compare_perft(fen.unwrap().to_string(), 7).unwrap();
+    // let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
 
-    // compare_perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1".to_string(), 5).unwrap();
+    let mut board = Board::from_fen("1nbqkbnr/rppppppp/p7/1B6/8/1P2P3/P1PP1PPP/RNBQK1NR b KQk - 1 3".to_string()).unwrap();
+    board.legal_moves();
+
+    // println!("{}", board);
+    // board.print_highlighted(board.kogge_stone_avx2_queen());
+    // board.print_highlighted(board.kogge_stone_avx2_bishop());
+    // board.print_highlighted(board.kogge_stone_avx2_rook());
+    // compare_perft(fen.unwrap().to_string(), 3).unwrap();
+
+    // compare_perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1".to_string(), 5).unwrap();
 
 
 
@@ -80,7 +88,6 @@ fn main() {
     // }
     // let mut board = Board::from_fen("r4k1r/p1ppqpb1/bn2pQN1/3P4/1p2P3/2N4p/PPPBBPPP/R3K2R b KQ - 0 2".to_string()).unwrap();
     // //
-    // let legal_moves = board.legal_moves();
     // for piece_move in legal_moves {
     //     println!("=== {} ===", piece_move.to_uci());
     //     board.apply_move(&piece_move);
@@ -96,7 +103,7 @@ fn main() {
 
 fn compare_perft(fen: String, depth: u8) -> io::Result<()>{
     println!("Comparing '{}' at depth {}", fen, depth);
-    let mut child = Command::new(".\\stockfish.exe")
+    let mut child = Command::new("./stockfish")
         .stdout(Stdio::piped())
         .stdin(Stdio::piped())
         .spawn()?;

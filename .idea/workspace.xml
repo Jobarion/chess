@@ -3,6 +3,11 @@
   <component name="AutoImportSettings">
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
+  <component name="CMakeSettings">
+    <configurations>
+      <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" />
+    </configurations>
+  </component>
   <component name="CargoProjects">
     <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
@@ -17,6 +22,9 @@
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
   </component>
   <component name="DefaultGradleProjectSettings">
     <option name="isMigrated" value="true" />
@@ -136,13 +144,24 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/jonas/Documents/rust/chess/src&quot;,
-    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "/home/joba/Documents/Dev/Personal/chess",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "settings.editor.selected.configurable": "preferences.keymap",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\jonas\Documents\rust\chess\src" />
@@ -184,8 +203,8 @@
       <option name="redirectInputPath" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="Test bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
-      <option name="command" value="test --package chess --bin chess bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw -- --exact" />
+    <configuration name="Test bitboard::bitboard_gen_tests::generate_diag_mask" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
+      <option name="command" value="test --package chess --bin chess bitboard::bitboard_gen_tests::generate_diag_mask -- --exact" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
       <option name="emulateTerminal" value="false" />
       <option name="channel" value="DEFAULT" />
@@ -201,8 +220,8 @@
         <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
       </method>
     </configuration>
-    <configuration name="Test bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
-      <option name="command" value="test --package chess --bin chess bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne -- --exact" />
+    <configuration name="Test bitboard::bitboard_gen_tests::generate_rook_mask" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
+      <option name="command" value="test --package chess --bin chess bitboard::bitboard_gen_tests::generate_rook_mask -- --exact" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
       <option name="emulateTerminal" value="false" />
       <option name="channel" value="DEFAULT" />
@@ -263,19 +282,10 @@
       <option name="redirectInputPath" value="" />
       <method v="2" />
     </configuration>
-    <list>
-      <item itemvalue="Cargo.Run chess debug" />
-      <item itemvalue="Cargo.Run chess release" />
-      <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw" />
-      <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne" />
-      <item itemvalue="Cargo.Test board::pieces::pawn_test::pawn_promote_capture_black" />
-      <item itemvalue="Cargo.Test board::pieces::pawn_test::pawn_promote_capture_white" />
-      <item itemvalue="Cargo.Test check_test" />
-    </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_ne_sw" />
-        <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_pin_diag_sw_ne" />
+        <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_rook_mask" />
+        <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_diag_mask" />
       </list>
     </recent_temporary>
   </component>
@@ -294,6 +304,8 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1586627325559</updated>
+      <workItem from="1688485486946" duration="44000" />
+      <workItem from="1688485537421" duration="15315000" />
     </task>
     <task id="LOCAL-00001" summary="Working bitboard movegen">
       <created>1688407043358</created>
@@ -367,6 +379,9 @@
       <window_info anchor="right" id="Capture Analysis" order="7" />
       <window_info anchor="right" id="Palette&#9;" order="8" />
     </layout>
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Working bitboard movegen" />
