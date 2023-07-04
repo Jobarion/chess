@@ -7,8 +7,7 @@
     <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/src/piece.rs" afterDir="false" />
+    <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="Working bitboard movegen">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/bitboard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/bitboard.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/board.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/board.rs" afterDir="false" />
@@ -296,6 +295,14 @@
       <option name="presentableId" value="Default" />
       <updated>1586627325559</updated>
     </task>
+    <task id="LOCAL-00001" summary="Working bitboard movegen">
+      <created>1688407043358</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1688407043358</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TestHistory">
@@ -360,6 +367,10 @@
       <window_info anchor="right" id="Capture Analysis" order="7" />
       <window_info anchor="right" id="Palette&#9;" order="8" />
     </layout>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Working bitboard movegen" />
+    <option name="LAST_COMMIT_MESSAGE" value="Working bitboard movegen" />
   </component>
   <component name="editorHistoryManager">
     <entry file="file://$USER_HOME$/.rustup/toolchains/stable-x86_64-pc-windows-msvc/lib/rustlib/src/rust/src/libcore/macros.rs">

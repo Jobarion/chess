@@ -42,11 +42,12 @@ fn main() {
     let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
     // compare_perft(fen.unwrap().to_string(), 7).unwrap();
 
-    // compare_perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1".to_string(), 7).unwrap();
+    // compare_perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1".to_string(), 5).unwrap();
 
 
-    //
-    // let mut board = Board::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10".to_string()).unwrap();
+
+    // let result = Board::generate_rook_all_moves(BitBoard(0) | Square::new(3, 4), BitBoard(0xFFFFFFFFFFFFFFFF));
+    // println!("{}", result);
 
     // let a = Move::from_uci("h3g2".to_string(), &board).unwrap();
     // println!("{}", board.to_fen());
@@ -77,7 +78,7 @@ fn main() {
     //     // println!("Perft {}", start_move.to_uci());
     //     board.undo_move(&start_move);
     // }
-    // let mut board = Board::from_fen("8/8/3p4/1Pp4r/1K5k/5p2/4P1P1/1R6 w - c6 0 3".to_string()).unwrap();
+    // let mut board = Board::from_fen("r4k1r/p1ppqpb1/bn2pQN1/3P4/1p2P3/2N4p/PPPBBPPP/R3K2R b KQ - 0 2".to_string()).unwrap();
     // //
     // let legal_moves = board.legal_moves();
     // for piece_move in legal_moves {

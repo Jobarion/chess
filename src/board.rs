@@ -2,6 +2,7 @@ pub mod board {
     use std::any::type_name;
     use std::cmp::{max, min};
     use std::convert::{Into, TryFrom};
+    use std::ffi::c_int;
     use std::fmt::{Display, Error, Formatter, Write};
     use std::ops::Not;
     use std::pin::pin;
@@ -384,15 +385,13 @@ pub mod board {
             let king = self.kings & player_masks.0;
             let king_square = Square(king.0.trailing_zeros() as BoardIndex);
 
-            let (king_danger_squares, attackers) = self.generate_king_danger_squares();
+            let king_danger_squares = self.generate_king_danger_squares();
 
             // println!("Danger squares");
             // self.print_highlighted(king_danger_squares);
 
-            // println!("Attackers");
-            // self.print_highlighted(attackers);
-
-            if attackers.0.count_ones() > 0  {
+            if king_danger_squares & king_square != 0 {
+                let attackers = self.generate_attacker_squares(king_square);
                 return self.generate_king_danger_moves(king_square, king_danger_squares, attackers);
             }
             let pin_mask = self.generate_pin_mask(king_square, self.active_player);
@@ -405,8 +404,8 @@ pub mod board {
                 }
                 else if pin_mask.is_set(sqr) {
                     let partial_pin_mask = match king_square.direction_between(&sqr) {
-                        (1, 0) | (-1, 0) => FILES[sqr.rank()],
-                        (0, 1) | (0, -1) => RANKS[sqr.file()],
+                        (1, 0) | (-1, 0) => RANKS[sqr.rank()],
+                        (0, 1) | (0, -1) => FILES[sqr.file()],
                         (1, 1) | (-1,-1) => DIAGONALS_NW_SE[sqr],
                         (1,-1) | (-1, 1) => DIAGONALS_NE_SW[sqr],
                         _ => panic!()
@@ -469,7 +468,7 @@ pub mod board {
                 }
             }
 
-                //TODO[perf]: We can skip knights and pawns here because for those we can calculate the capture directly. Maybe it helps. Doesn't necessarily work for blocks though
+            //TODO[perf]: We can skip knights and pawns here because for those we can calculate the capture directly. Maybe it helps. Doesn't necessarily work for blocks though
             for sqr in self.active_color_mask() & !self.kings {
                 //Generate moves and only accept moves that end on attacker squares
                 let mut move_mask = self.generate_move_squares_by_piece(sqr, self.active_player, king_danger_squares);
@@ -485,8 +484,8 @@ pub mod board {
                 }
                 if pin_mask.is_set(sqr) {
                     let partial_pin_mask = match king_square.direction_between(&sqr) {
-                        (1, 0) | (-1, 0) => FILES[sqr.rank()],
-                        (0, 1) | (0, -1) => RANKS[sqr.file()],
+                        (1, 0) | (-1, 0) => RANKS[sqr.rank()],
+                        (0, 1) | (0, -1) => FILES[sqr.file()],
                         (1, 1) | (-1,-1) => DIAGONALS_NW_SE[sqr],
                         (1,-1) | (-1, 1) => DIAGONALS_NE_SW[sqr],
                         _ => panic!()
@@ -532,56 +531,6 @@ pub mod board {
                 rank = rank + dr;
             }
             ray_mask
-        }
-
-        fn generate_king_danger_squares(&mut self) -> (BitBoard, BitBoard) {
-            let mut attacked_squares = BitBoard(0);
-            let mut attackers = BitBoard(0);
-            let king = self.kings & self.active_color_mask();
-            //Remove active king for danger square check
-            if self.active_player == WHITE {
-                self.white ^= king;
-            }
-            else {
-                self.black ^= king;
-            }
-            self.kings ^= king;
-
-            self.board[king.0.trailing_zeros() as usize] = None;
-
-            for sqr in self.opponent_color_mask() {
-                let attacked_bp = self.generate_danger_squares_by_piece(sqr, !self.active_player);
-                attacked_squares |= attacked_bp;
-                if king & attacked_bp != 0 {
-                    attackers |= sqr;
-                }
-            }
-            //Place king back
-            self.kings ^= king;
-            if self.active_player == WHITE {
-                self.white ^= king;
-            }
-            else {
-                self.black ^= king;
-            }
-            self.board[king.0.trailing_zeros() as usize] = Some(Piece{piece_type: PieceType::KING, color: self.active_player});
-            (attacked_squares, attackers)
-        }
-
-        fn generate_danger_squares_by_piece(&self, sqr: Square, color_to_move: Color) -> BitBoard {
-            match self.board[sqr] {
-                None => BitBoard(0),
-                Some(Piece{piece_type: _, color}) if color != color_to_move => BitBoard(0),
-                Some(Piece{piece_type, color }) => match piece_type {
-                    PieceType::KING => KING_MOVES[sqr],
-                    PieceType::KNIGHT => KNIGHT_MOVES[sqr],
-                    PieceType::PAWN if color_to_move == WHITE => PAWN_CAPTURE_MOVES_WHITE[sqr.0],
-                    PieceType::PAWN => PAWN_CAPTURE_MOVES_BLACK[sqr],
-                    PieceType::ROOK => self.generate_rook_moves(sqr, color, true),
-                    PieceType::BISHOP => self.generate_bishop_moves(sqr, color, true),
-                    PieceType::QUEEN => self.generate_queen_moves(sqr, color, true),
-                }
-            }
         }
 
         fn generate_move_squares_by_piece(&self, sqr: Square, color_to_move: Color, king_danger_squares: BitBoard) -> BitBoard {
@@ -640,9 +589,9 @@ pub mod board {
                         }
                         pawn_moves
                     },
-                    PieceType::ROOK => self.generate_rook_moves(sqr, color, false),
-                    PieceType::BISHOP => self.generate_bishop_moves(sqr, color, false),
-                    PieceType::QUEEN => self.generate_queen_moves(sqr, color, false),
+                    PieceType::ROOK => self.generate_rook_moves_ks(sqr, color),
+                    PieceType::BISHOP => self.generate_bishop_moves_ks(sqr, color),
+                    PieceType::QUEEN => self.generate_queen_moves_ks(sqr, color),
                 }
             }
         }
@@ -837,114 +786,138 @@ pub mod board {
             pin_squares
         }
 
-        fn generate_rook_moves(&self, sqr: Square, rook_color: Color, include_danger: bool) -> BitBoard {
-            let mut move_squares = BitBoard(0);
-            for n in (sqr.file() + 1)..8 {
-                let sq = Square::new(n, sqr.rank());
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != rook_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
-            }
-            for n in (0..sqr.file()).rev() {
-                let sq = Square::new(n, sqr.rank());
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != rook_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
-            }
-            for n in (sqr.rank() + 1)..8 {
-                let sq = Square::new(sqr.file(), n);
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != rook_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
-            }
-            for n in (0..sqr.rank()).rev() {
-                let sq = Square::new(sqr.file(), n);
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != rook_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
-            }
-            move_squares
+        fn generate_attacker_squares(&self, king_sqr: Square) -> BitBoard {
+            let mut mask = if self.active_player == WHITE {
+                PAWN_CAPTURE_MOVES_WHITE[king_sqr] & self.pawns
+            } else {
+                PAWN_CAPTURE_MOVES_BLACK[king_sqr] & self.pawns
+            };
+            mask |= KNIGHT_MOVES[king_sqr] & self.knights;
+            let king_mask = BitBoard(1 << king_sqr.0);
+            mask |= self.ks_rook_moves(!(self.white | self.black), king_mask) & (self.rooks | self.queens);
+            mask |= self.ks_bishop_moves(!(self.white | self.black), king_mask) & (self.bishops | self.queens);
+            mask & self.opponent_color_mask()
         }
 
-        fn generate_bishop_moves(&self, sqr: Square, bishop_color: Color, include_danger: bool) -> BitBoard {
-            let mut move_squares = BitBoard(0);
-            let rank = sqr.rank();
-            let file = sqr.file();
-            let min = min(rank, file);
-            let max = max(rank, file);
-            for n in 1..8 {
-                if max + n >= 8 {
-                    break;
-                }
-                let sq = Square::new(sqr.file() + n, sqr.rank() + n);
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != bishop_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
+        fn generate_king_danger_squares(&self) -> BitBoard {
+            let opponent_color_mask = self.opponent_color_mask();
+            let pawn_attack_mask = match self.active_player {
+                WHITE => PAWN_CAPTURE_MOVES_BLACK,
+                BLACK => PAWN_CAPTURE_MOVES_WHITE
+            };
+            let mut danger_mask = KING_MOVES[(self.kings & opponent_color_mask).0.trailing_zeros() as usize];
+            for pawn_sqr in self.pawns & opponent_color_mask {
+                danger_mask |= pawn_attack_mask[pawn_sqr];
             }
-            for n in 1..8 {
-                if min < n {
-                    break;
-                }
-                let sq = Square::new(sqr.file() - n, sqr.rank() - n);
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != bishop_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
+            for knight_sqr in self.knights & opponent_color_mask {
+                danger_mask |= KNIGHT_MOVES[knight_sqr];
             }
-            for n in 1..8 {
-                if rank < n || file + n >= 8 {
-                    break;
-                }
-                let sq = Square::new(sqr.file() + n, sqr.rank() - n);
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != bishop_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
-            }
-            for n in 1..8 {
-                if file < n || rank + n >= 8 {
-                    break;
-                }
-                let sq = Square::new(sqr.file() - n, sqr.rank() + n);
-                if let Some(Piece{piece_type, color}) = self.board[sq] {
-                    if include_danger || color != bishop_color {
-                        move_squares |= sq;
-                    }
-                    break;
-                }
-                move_squares |= sq;
-            }
-            move_squares
+            //Remove attacked king for sliding attacks
+            let occlusion_mask = (self.white | self.black) ^ (self.kings & self.active_color_mask());
+            danger_mask |= self.ks_rook_moves(!occlusion_mask, (self.rooks | self.queens) & opponent_color_mask);
+            danger_mask | self.ks_bishop_moves(!occlusion_mask, (self.bishops | self.queens) & opponent_color_mask)
         }
 
-        fn generate_queen_moves(&self, sqr: Square, color: Color, include_danger: bool) -> BitBoard {
-            self.generate_bishop_moves(sqr, color, include_danger) | self.generate_rook_moves(sqr, color, include_danger)
+        fn ks_rook_moves(&self, propagate_mask: BitBoard, rook_sliders: BitBoard) -> BitBoard {
+            let n = Board::kogge_stone_north(rook_sliders, propagate_mask) << 8;
+            let e = Board::kogge_stone_east(rook_sliders, propagate_mask) << 1 & !FILES[0];
+            let s = Board::kogge_stone_south(rook_sliders, propagate_mask) >> 8;
+            let w = Board::kogge_stone_west(rook_sliders, propagate_mask) >> 1 & !FILES[7];
+
+            n | e | s | w
+        }
+
+        fn ks_bishop_moves(&self, propagate_mask: BitBoard, bishop_sliders: BitBoard) -> BitBoard {
+            let ne = Board::kogge_stone_north_east(bishop_sliders, propagate_mask) << 9 & !FILES[0];
+            let nw = Board::kogge_stone_north_west(bishop_sliders, propagate_mask) << 7 & !FILES[7];
+            let se = Board::kogge_stone_south_east(bishop_sliders, propagate_mask) >> 7 & !FILES[0];
+            let sw = Board::kogge_stone_south_west(bishop_sliders, propagate_mask) >> 9 & !FILES[7];
+
+            ne | nw | se | sw
+        }
+
+        fn kogge_stone_south(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            gen |= pro & (gen >>  8);
+            pro &=       (pro >>  8);
+            gen |= pro & (gen >> 16);
+            pro &=       (pro >> 16);
+            gen | (pro & (gen >> 32))
+        }
+
+        fn kogge_stone_north(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            gen |= pro & (gen <<  8);
+            pro &=       (pro <<  8);
+            gen |= pro & (gen << 16);
+            pro &=       (pro << 16);
+            gen |= pro & (gen << 32);
+            gen
+        }
+
+        fn kogge_stone_east(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            pro &= !FILES[0];
+            gen |= pro & (gen << 1);
+            pro &=       (pro << 1);
+            gen |= pro & (gen << 2);
+            pro &=       (pro << 2);
+            gen | (pro & (gen << 4))
+        }
+
+        fn kogge_stone_west(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            pro &= !FILES[7];
+            gen |= pro & (gen >> 1);
+            pro &=       (pro >> 1);
+            gen |= pro & (gen >> 2);
+            pro &=       (pro >> 2);
+            gen | (pro & (gen >> 4))
+        }
+
+        fn kogge_stone_north_east(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            pro &= !FILES[0];
+            gen |= pro & (gen <<  9);
+            pro &=       (pro <<  9);
+            gen |= pro & (gen << 18);
+            pro &=       (pro << 18);
+            gen | (pro & (gen << 36))
+        }
+
+        fn kogge_stone_south_east(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            pro &= !FILES[0];
+            gen |= pro & (gen >>  7);
+            pro &=       (pro >>  7);
+            gen |= pro & (gen >> 14);
+            pro &=       (pro >> 14);
+            gen | (pro & (gen >> 28))
+        }
+
+        fn kogge_stone_south_west(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            pro &= !FILES[7];
+            gen |= pro & (gen >>  9);
+            pro &=       (pro >>  9);
+            gen |= pro & (gen >> 18);
+            pro &=       (pro >> 18);
+            gen | (pro & (gen >> 36))
+        }
+
+        fn kogge_stone_north_west(mut gen: BitBoard, mut pro: BitBoard) -> BitBoard {
+            pro &= !FILES[7];
+            gen |= pro & (gen <<  7);
+            pro &=       (pro <<  7);
+            gen |= pro & (gen << 14);
+            pro &=       (pro << 14);
+            gen | (pro & (gen << 28))
+        }
+
+
+        fn generate_rook_moves_ks(&self, sqr: Square, rook_color: Color) -> BitBoard {
+            self.ks_rook_moves(!(self.white | self.black), BitBoard(1 << sqr.0 as usize)) & !self.mask_for_color(rook_color)
+        }
+
+        fn generate_bishop_moves_ks(&self, sqr: Square, rook_color: Color) -> BitBoard {
+            self.ks_bishop_moves(!(self.white | self.black), BitBoard(1 << sqr.0 as usize)) & !self.mask_for_color(rook_color)
+        }
+
+        fn generate_queen_moves_ks(&self, sqr: Square, queen_color: Color) -> BitBoard {
+            self.generate_bishop_moves_ks(sqr, queen_color) | self.generate_rook_moves_ks(sqr, queen_color)
         }
 
         fn moves_from_target_bitboard(&self, from: Square, mut possible_targets: BitBoard) -> Vec<Move> {

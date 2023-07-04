@@ -1,5 +1,6 @@
+use std::fmt::{Debug, Display, Formatter};
 use std::future::poll_fn;
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr, Sub, SubAssign};
 use std::process::Output;
 use crate::board::board::Board;
 use crate::piece::Square;
@@ -15,8 +16,8 @@ pub const PAWN_MOVES_BLACK: [BitBoard; 64] = [BitBoard(0), BitBoard(0), BitBoard
 pub const KING_MOVES: [BitBoard; 64] = [BitBoard(770), BitBoard(1797), BitBoard(3594), BitBoard(7188), BitBoard(14376), BitBoard(28752), BitBoard(57504), BitBoard(49216), BitBoard(197123), BitBoard(460039), BitBoard(920078), BitBoard(1840156), BitBoard(3680312), BitBoard(7360624), BitBoard(14721248), BitBoard(12599488), BitBoard(50463488), BitBoard(117769984), BitBoard(235539968), BitBoard(471079936), BitBoard(942159872), BitBoard(1884319744), BitBoard(3768639488), BitBoard(3225468928), BitBoard(12918652928), BitBoard(30149115904), BitBoard(60298231808), BitBoard(120596463616), BitBoard(241192927232), BitBoard(482385854464), BitBoard(964771708928), BitBoard(825720045568), BitBoard(3307175149568), BitBoard(7718173671424), BitBoard(15436347342848), BitBoard(30872694685696), BitBoard(61745389371392), BitBoard(123490778742784), BitBoard(246981557485568), BitBoard(211384331665408), BitBoard(846636838289408), BitBoard(1975852459884544), BitBoard(3951704919769088), BitBoard(7903409839538176), BitBoard(15806819679076352), BitBoard(31613639358152704), BitBoard(63227278716305408), BitBoard(54114388906344448), BitBoard(216739030602088448), BitBoard(505818229730443264), BitBoard(1011636459460886528), BitBoard(2023272918921773056), BitBoard(4046545837843546112), BitBoard(8093091675687092224), BitBoard(16186183351374184448), BitBoard(13853283560024178688), BitBoard(144959613005987840), BitBoard(362258295026614272), BitBoard(724516590053228544), BitBoard(1449033180106457088), BitBoard(2898066360212914176), BitBoard(5796132720425828352), BitBoard(11592265440851656704), BitBoard(4665729213955833856)];
 pub const DIAGONALS_NW_SE: [BitBoard; 64] = [BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(8405024), BitBoard(32832), BitBoard(128), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(8405024), BitBoard(32832), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(8405024), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(2151686160), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(550831656968), BitBoard(288794425616760832), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(141012904183812), BitBoard(144396663052566528), BitBoard(288794425616760832), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745), BitBoard(36099303471055874), BitBoard(72057594037927936), BitBoard(144396663052566528), BitBoard(288794425616760832), BitBoard(577588855528488960), BitBoard(1155177711073755136), BitBoard(2310355422147575808), BitBoard(4620710844295151872), BitBoard(9241421688590303745)];
 pub const DIAGONALS_NE_SW: [BitBoard; 64] = [BitBoard(1), BitBoard(258), BitBoard(66052), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(258), BitBoard(66052), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(66052), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(16909320), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(4328785936), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(1108169199648), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(2323998145211531264), BitBoard(283691315109952), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(2323998145211531264), BitBoard(4647714815446351872), BitBoard(72624976668147840), BitBoard(145249953336295424), BitBoard(290499906672525312), BitBoard(580999813328273408), BitBoard(1161999622361579520), BitBoard(2323998145211531264), BitBoard(4647714815446351872), BitBoard(9223372036854775808)];
-pub const FILES: [BitBoard; 8] = [BitBoard(0xFF << 0), BitBoard(0xFF << 8), BitBoard(0xFF << 16), BitBoard(0xFF << 24), BitBoard(0xFF << 32), BitBoard(0xFF << 40), BitBoard(0xFF << 48), BitBoard(0xFF << 56)];
-pub const RANKS: [BitBoard; 8] = [BitBoard(0x0101010101010101 << 0), BitBoard(0x0101010101010101 << 1), BitBoard(0x0101010101010101 << 2), BitBoard(0x0101010101010101 << 3), BitBoard(0x0101010101010101 << 4), BitBoard(0x0101010101010101 << 5), BitBoard(0x0101010101010101 << 6), BitBoard(0x0101010101010101 << 7)];
+pub const RANKS: [BitBoard; 8] = [BitBoard(0xFF << 0), BitBoard(0xFF << 8), BitBoard(0xFF << 16), BitBoard(0xFF << 24), BitBoard(0xFF << 32), BitBoard(0xFF << 40), BitBoard(0xFF << 48), BitBoard(0xFF << 56)];
+pub const FILES: [BitBoard; 8] = [BitBoard(0x0101010101010101 << 0), BitBoard(0x0101010101010101 << 1), BitBoard(0x0101010101010101 << 2), BitBoard(0x0101010101010101 << 3), BitBoard(0x0101010101010101 << 4), BitBoard(0x0101010101010101 << 5), BitBoard(0x0101010101010101 << 6), BitBoard(0x0101010101010101 << 7)];
 
 impl BitBoard {
 
@@ -41,10 +42,26 @@ impl BitBoard {
             BitBoard(0) => None,
             BitBoard(n) => {
                 let lss = Square(n.trailing_zeros() as usize);
-                self.0 = *n ^ (1 << lss.0);
+                self.0 &= self.0 - 1;
                 Some(lss)
             }
         }
+    }
+}
+
+impl Display for BitBoard {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for rank in (0..8).rev() {
+            for file in 0..8 {
+                let sqr = Square::new(file, rank);
+                let _ = match *self & sqr == 0 {
+                    true => write!(f, "0")?,
+                    false => write!(f, "1")?
+                };
+            }
+            write!(f, "\n")?
+        }
+        Ok(())
     }
 }
 
@@ -71,6 +88,36 @@ impl Iterator for BitBoard {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.pop_lsb()
+    }
+}
+
+impl Shr<usize> for BitBoard {
+    type Output = BitBoard;
+
+    fn shr(self, rhs: usize) -> Self::Output {
+        BitBoard(self.0 >> rhs)
+    }
+}
+
+impl Shl<usize> for BitBoard {
+    type Output = BitBoard;
+
+    fn shl(self, rhs: usize) -> Self::Output {
+        BitBoard(self.0 << rhs)
+    }
+}
+
+impl Sub<Square> for BitBoard {
+    type Output = BitBoard;
+
+    fn sub(self, rhs: Square) -> Self::Output {
+        BitBoard(self.0 - (1 << rhs.0))
+    }
+}
+
+impl SubAssign<Square> for BitBoard {
+    fn sub_assign(&mut self, rhs: Square) {
+        self.0 -= 1 << rhs.0;
     }
 }
 
