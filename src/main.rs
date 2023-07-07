@@ -1,18 +1,22 @@
 use crate::board::board::{Board};
 use std::convert::TryFrom;
-use std::io;
+use std::{io, thread};
 use std::io::{Error, Write};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
-use std::time::Instant;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 use clap::{App, Arg};
+use console::Term;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
-use crate::piece::{Move, Square};
+use crate::evaluator::{MiniMaxEvaluator, MoveFinder, MoveSuggestion, Stats};
+use crate::piece::{Color, Move, Square};
 
 mod board;
 mod bitboard;
 mod piece;
+mod evaluator;
 
 const TERMINAL: bool = true;
 const DEFAULT_DEPTH: u8 = 6;
@@ -39,10 +43,10 @@ fn main() {
                 .default_value(""))
         .get_matches();
     let fen = matches.value_of("fen");
-    // let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
+    let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
 
-    let mut board = Board::from_fen("1nbqkbnr/rppppppp/p7/1B6/8/1P2P3/P1PP1PPP/RNBQK1NR b KQk - 1 3".to_string()).unwrap();
-    board.legal_moves();
+    run_engine();
+    // board.legal_moves();
 
     // println!("{}", board);
     // board.print_highlighted(board.kogge_stone_avx2_queen());
@@ -74,10 +78,10 @@ fn main() {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    for n in 1..10 {
-        let start = Instant::now();
-        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    }
+    // for n in 1..10 {
+    //     let start = Instant::now();
+    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    // }
 
     // for start_move in board.legal_moves() {
     //
@@ -86,9 +90,9 @@ fn main() {
     //     // println!("Perft {}", start_move.to_uci());
     //     board.undo_move(&start_move);
     // }
-    // let mut board = Board::from_fen("r4k1r/p1ppqpb1/bn2pQN1/3P4/1p2P3/2N4p/PPPBBPPP/R3K2R b KQ - 0 2".to_string()).unwrap();
-    // //
-    // for piece_move in legal_moves {
+    // let mut board = Board::from_fen("r5kr/qqqqqqq1/5Q2/5B2/5NQ1/5BQ1/P4NQ1/KB4Q1 w - - 0 2".to_string()).unwrap();
+    // // //
+    // for piece_move in board.legal_moves().legal_moves {
     //     println!("=== {} ===", piece_move.to_uci());
     //     board.apply_move(&piece_move);
     //     // let legal_next = board.legal_moves();
@@ -99,6 +103,64 @@ fn main() {
     //     // println!("{}", board.to_fen());
     //     board.undo_move(&piece_move);
     // }
+}
+
+fn run_engine() {
+    let mut board = Board::from_fen("5rkr/qqqqqqq1/8/5B2/5NQ1/5BQ1/P4NQ1/KB4Q1 w - - 0 1".to_string()).unwrap();
+    let evaluator = MiniMaxEvaluator::new(8);
+
+    for i in 0..1 {
+        spawn_watch_thread(evaluator.stats.clone(), board.clone());
+        let start = SystemTime::now();
+        let MoveSuggestion(eval, m_opt) = evaluator.find_move(&mut board);
+        evaluator.reset_stats();
+        if let None = m_opt {
+            println!("Game over. {:?}", eval);
+            break;
+        }
+
+        let m = m_opt.unwrap();
+        let since_the_epoch = SystemTime::now().duration_since(start)
+            .expect("Time went backwards");
+        println!("Move: {} ({})", m.to_uci(), eval);
+        println!();
+        board.apply_move(&m);
+        println!("{}", board);
+    }
+}
+
+fn spawn_watch_thread(stats: Arc<Mutex<Stats>>, board: Board) {
+    thread::spawn(move || {
+        let mut term = Term::stdout();
+        let mut last = 0;
+        loop {
+            thread::sleep(Duration::from_millis(500));
+            let mut stats = stats.lock().unwrap();
+            let current = (*stats).evaluated_positions;
+            let best_move =(*stats).best_move.clone();
+            let best_move = match best_move {
+                None => "Best move: ?".to_string(),
+                Some(MoveSuggestion(eval, None)) => eval.to_string(),
+                Some(MoveSuggestion(eval, Some(mv))) => format_args!("Best move: {} ({})", mv.to_uci(), eval).to_string(),
+            };
+
+            if current < last {
+                break;
+            }
+            let diff = (current - last) * 2;
+            last = current;
+            if TERMINAL {
+                term.clear_last_lines(2);
+                // term.write_fmt(format_args!("Evaluated {} boards/sec ({} total)\n", diff, current));
+                // term.write_line(best_move.as_str());
+            }
+            else {
+                // println!("Evaluated {} boards/sec ({} total)", diff, current);
+                // println!("{}", best_move);
+            }
+        }
+    });
+
 }
 
 fn compare_perft(fen: String, depth: u8) -> io::Result<()>{
@@ -117,7 +179,7 @@ fn compare_perft(fen: String, depth: u8) -> io::Result<()>{
     let mut board = Board::from_fen(fen).unwrap();
 
     let board_clone = board.clone();
-    let our_valid_moves = board.legal_moves();
+    let our_valid_moves = board.legal_moves().legal_moves;
     let stockfish_valid_moves = String::from_utf8(child.wait_with_output()?.stdout).unwrap()
         .split("\n")
         .skip(1)

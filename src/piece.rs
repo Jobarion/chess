@@ -163,7 +163,7 @@ impl Move {
                 let uci_promo_char = uci.chars().nth(4).unwrap();
                 move_iter.filter_map(|x| {
                     if let MoveAction::Promotion(piece_type, _) = x.move_type {
-                        if uci_promo_char == piece_type.into() {
+                        if uci_promo_char == Into::<char>::into(piece_type) {
                             Some(x)
                         }
                         else {
@@ -296,7 +296,7 @@ impl PieceType {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Color {
     WHITE,
     BLACK

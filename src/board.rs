@@ -79,6 +79,12 @@ pub mod board {
         }
     }
 
+    pub struct LegalMoveData {
+        pub legal_moves: Vec<Move>,
+        pub king_danger_mask: BitBoard,
+        pub pin_mask: BitBoard,
+    }
+
     #[derive(Copy, Clone, Debug)]
     pub struct Board {
         pub board: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize],
@@ -200,7 +206,7 @@ pub mod board {
                 }
                 Move{from, to, move_type: MoveAction::Normal, previous_ep_square} => {
                     self.set(moved_piece, *to);
-                    self.halfmove_clock += 1;
+                    // self.halfmove_clock += 1;
                 }
                 Move{from, to, move_type: MoveAction::EnPassant, previous_ep_square} => {
                     self.set(moved_piece, *to);
@@ -339,7 +345,7 @@ pub mod board {
         }
 
         fn _perft(&mut self, mut perft: &mut Perft, depth: u8) {
-            for lmove in self.legal_moves() {
+            for lmove in self.legal_moves().legal_moves {
                 //Don't descend into king captures
                 if let MoveAction::Capture(KING) = lmove.move_type {
                     continue;
@@ -377,7 +383,7 @@ pub mod board {
             }
         }
 
-        pub(crate) fn legal_moves(&mut self) -> Vec<Move> {
+        pub(crate) fn legal_moves(&self) -> LegalMoveData {
             let player_masks: (BitBoard, BitBoard) = match self.active_player {
                 WHITE => (self.white, self.black),
                 BLACK => (self.black, self.white)
@@ -395,14 +401,6 @@ pub mod board {
                 return self.generate_king_danger_moves(king_square, king_danger_squares);
             }
             let pin_mask = self.generate_pin_mask(king_square, self.active_player);
-
-            if pin_mask.0 != self.generate_pin_mask_avx(king_square, self.active_player).0 {
-                println!("Diff");
-                println!("{}", self.to_fen());
-                println!("{}", pin_mask);
-                println!("{}", self.generate_pin_mask_avx(king_square, self.active_player));
-                panic!()
-            }
 
             let mut moves: Vec<Move> = vec!();
 
@@ -449,10 +447,10 @@ pub mod board {
             let move_mask = self.generate_king_moves(king_square, king_danger_squares) & !king_danger_squares;
             moves.append(&mut self.moves_from_target_bitboard(king_square, move_mask));
 
-            moves
+            LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask }
         }
 
-        fn generate_king_danger_moves(&self, king_square: Square, king_danger_squares: BitBoard) -> Vec<Move> {
+        fn generate_king_danger_moves(&self, king_square: Square, king_danger_squares: BitBoard) -> LegalMoveData {
             let mut moves: Vec<Move> = vec!();
 
             let evasive_king_moves = KING_MOVES[king_square] & !king_danger_squares & !self.active_color_mask();
@@ -461,7 +459,7 @@ pub mod board {
             //Double check, the king can only run away
             let attackers = self.generate_attacker_squares(king_square);
             if attackers.0.count_ones() > 1 {
-                return moves;
+                return LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask: BitBoard(0) };
             }
 
             let attacker_square = Square(attackers.0.trailing_zeros() as BoardIndex);
@@ -533,7 +531,7 @@ pub mod board {
                     moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
                 }
             }
-            moves
+            LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask }
         }
 
         fn calculate_partial_pin_mask(piece_square: Square, king_square: Square, pin_mask: BitBoard) -> BitBoard {
