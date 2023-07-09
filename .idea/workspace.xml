@@ -13,11 +13,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="Working bitboard movegen">
-      <change afterPath="$PROJECT_DIR$/src/evaluator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/board.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/board.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/evaluator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/evaluator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/piece.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/piece.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -287,6 +286,15 @@
       <option name="redirectInputPath" value="" />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Cargo.Run chess debug" />
+      <item itemvalue="Cargo.Run chess release" />
+      <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_diag_mask" />
+      <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_rook_mask" />
+      <item itemvalue="Cargo.Test board::pieces::pawn_test::pawn_promote_capture_black" />
+      <item itemvalue="Cargo.Test board::pieces::pawn_test::pawn_promote_capture_white" />
+      <item itemvalue="Cargo.Test check_test" />
+    </list>
     <recent_temporary>
       <list>
         <item itemvalue="Cargo.Test bitboard::bitboard_gen_tests::generate_rook_mask" />

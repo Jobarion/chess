@@ -45,9 +45,9 @@ fn main() {
     let fen = matches.value_of("fen");
     let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
 
-    run_engine();
+    // run_engine();
     // board.legal_moves();
-
+    
     // println!("{}", board);
     // board.print_highlighted(board.kogge_stone_avx2_queen());
     // board.print_highlighted(board.kogge_stone_avx2_bishop());
@@ -78,10 +78,10 @@ fn main() {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    // for n in 1..10 {
-    //     let start = Instant::now();
-    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    // }
+    for n in 1..10 {
+        let start = Instant::now();
+        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    }
 
     // for start_move in board.legal_moves() {
     //
@@ -90,7 +90,8 @@ fn main() {
     //     // println!("Perft {}", start_move.to_uci());
     //     board.undo_move(&start_move);
     // }
-    // let mut board = Board::from_fen("r5kr/qqqqqqq1/5Q2/5B2/5NQ1/5BQ1/P4NQ1/KB4Q1 w - - 0 2".to_string()).unwrap();
+    // let mut board = Board::from_fen("5rkr/qqqq2Q1/8/5B2/5N2/5B2/P4N2/KB4Q1 b - - 0 3".to_string()).unwrap();
+    // println!("{:?}", board.legal_moves());
     // // //
     // for piece_move in board.legal_moves().legal_moves {
     //     println!("=== {} ===", piece_move.to_uci());
@@ -106,27 +107,42 @@ fn main() {
 }
 
 fn run_engine() {
-    let mut board = Board::from_fen("5rkr/qqqqqqq1/8/5B2/5NQ1/5BQ1/P4NQ1/KB4Q1 w - - 0 1".to_string()).unwrap();
-    let evaluator = MiniMaxEvaluator::new(8);
+    // let mut board = Board::from_fen("5rkr/qqqqqqq1/8/5B2/5NQ1/5BQ1/P4NQ1/KB4Q1 w - - 0 1".to_string()).unwrap();
+    let mut board = Board::from_fen("5rkr/qqq3q1/8/5B2/5N2/5B2/P4N2/KB4Q1 w - - 0 4".to_string()).unwrap();
+    let evaluator = MiniMaxEvaluator::new(9);
 
-    for i in 0..1 {
-        spawn_watch_thread(evaluator.stats.clone(), board.clone());
-        let start = SystemTime::now();
-        let MoveSuggestion(eval, m_opt) = evaluator.find_move(&mut board);
-        evaluator.reset_stats();
-        if let None = m_opt {
-            println!("Game over. {:?}", eval);
+    loop {
+        if let MoveSuggestion(eval, Some(pmove)) = evaluator.find_move(&mut board) {
+            println!("{}", board);
+            println!("{:?}", board.legal_moves().legal_moves.into_iter().map(|x|x.to_uci()).collect_vec());
+            println!("{}", board.to_fen());
+            println!("Applying move: {}. Evaluation is {}\n", pmove.to_uci(), eval);
+            board.apply_move(&pmove);
+            // break;
+        }
+        else {
             break;
         }
-
-        let m = m_opt.unwrap();
-        let since_the_epoch = SystemTime::now().duration_since(start)
-            .expect("Time went backwards");
-        println!("Move: {} ({})", m.to_uci(), eval);
-        println!();
-        board.apply_move(&m);
-        println!("{}", board);
     }
+
+    // for i in 0..1 {
+    //     spawn_watch_thread(evaluator.stats.clone(), board.clone());
+    //     let start = SystemTime::now();
+    //     let MoveSuggestion(eval, m_opt) = evaluator.find_move(&mut board);
+    //     evaluator.reset_stats();
+    //     if let None = m_opt {
+    //         println!("Game over. {:?}", eval);
+    //         break;
+    //     }
+    //
+    //     let m = m_opt.unwrap();
+    //     let since_the_epoch = SystemTime::now().duration_since(start)
+    //         .expect("Time went backwards");
+    //     println!("Move: {} ({})", m.to_uci(), eval);
+    //     println!();
+    //     board.apply_move(&m);
+    //     println!("{}", board);
+    // }
 }
 
 fn spawn_watch_thread(stats: Arc<Mutex<Stats>>, board: Board) {

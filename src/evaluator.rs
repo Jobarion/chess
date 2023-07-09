@@ -4,6 +4,7 @@ use std::future::poll_fn;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Neg, Not, Shl, Shr, Sub, SubAssign};
 use std::process::Output;
 use std::sync::{Arc, Mutex};
+use itertools::Itertools;
 use crate::bitboard::BitBoard;
 use crate::board::board::{Board, LegalMoveData};
 use crate::evaluator::Evaluation::{Estimate, Mate, Stalemate};
@@ -78,17 +79,17 @@ impl Display for Evaluation {
 }
 
 pub fn eval_position_direct(board: &Board) -> Evaluation {
-    let material_black = (board.black & board.pawns).0.count_ones() +
+    let material_black = ((board.black & board.pawns).0.count_ones() +
         (board.black & board.knights).0.count_ones() * 3 +
         (board.black & board.bishops).0.count_ones() * 3 +
         (board.black & board.rooks).0.count_ones() * 5 +
-        (board.black & board.queens).0.count_ones() * 9;
+        (board.black & board.queens).0.count_ones() * 9) as i32;
 
-    let material_white = (board.white & board.pawns).0.count_ones() +
+    let material_white = ((board.white & board.pawns).0.count_ones() +
         (board.white & board.knights).0.count_ones() * 3 +
         (board.white & board.bishops).0.count_ones() * 3 +
         (board.white & board.rooks).0.count_ones() * 5 +
-        (board.white & board.queens).0.count_ones() * 9;
+        (board.white & board.queens).0.count_ones() * 9) as i32;
 
     return Estimate((material_white - material_black) as f32)
 }
@@ -160,7 +161,7 @@ impl MiniMaxEvaluator {
                 }
             }
             beta = beta.min(eval);
-            if alpha >= beta {
+            if min_eval <= alpha {
                 break;
             }
         }
@@ -215,7 +216,7 @@ impl MiniMaxEvaluator {
                 }
             }
             alpha = alpha.max(eval);
-            if alpha >= beta {
+            if max_eval >= beta {
                 break;
             }
         }

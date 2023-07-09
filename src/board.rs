@@ -531,6 +531,7 @@ pub mod board {
                     moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
                 }
             }
+
             LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask }
         }
 
