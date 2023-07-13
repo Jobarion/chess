@@ -8,12 +8,15 @@ use std::sync::{Arc, Mutex};
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
 use crate::board::board::{Board, LegalMoveData};
+use crate::Color::*;
 use crate::evaluator::Evaluation::{Estimate, Mate, Stalemate};
 use crate::piece::{Color, Move, MoveAction, Piece, PieceType, Square};
 use crate::piece::MoveAction::Normal;
+use crate::piece::PieceType::*;
 
 const MIN_EVAL: Evaluation = Mate(Color::BLACK, 0);
 const MAX_EVAL: Evaluation = Mate(Color::WHITE, 0);
+
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Evaluation {
@@ -80,17 +83,17 @@ impl Display for Evaluation {
 }
 
 pub fn eval_position_direct(board: &Board) -> Evaluation {
-    let material_black = ((board.black & board.pawns).0.count_ones() +
-        (board.black & board.knights).0.count_ones() * 3 +
-        (board.black & board.bishops).0.count_ones() * 3 +
-        (board.black & board.rooks).0.count_ones() * 5 +
-        (board.black & board.queens).0.count_ones() * 9) as i32;
+    let material_black = (board.piece_bbs[BLACK][PAWN].0.count_ones() * 100 +
+        board.piece_bbs[BLACK][KNIGHT].0.count_ones() * 320 +
+        board.piece_bbs[BLACK][BISHOP].0.count_ones() * 330 +
+        board.piece_bbs[BLACK][ROOK].0.count_ones() * 500 +
+        board.piece_bbs[BLACK][QUEEN].0.count_ones() * 900) as i32;
 
-    let material_white = ((board.white & board.pawns).0.count_ones() +
-        (board.white & board.knights).0.count_ones() * 3 +
-        (board.white & board.bishops).0.count_ones() * 3 +
-        (board.white & board.rooks).0.count_ones() * 5 +
-        (board.white & board.queens).0.count_ones() * 9) as i32;
+    let material_white = (board.piece_bbs[WHITE][PAWN].0.count_ones() * 100 +
+        board.piece_bbs[WHITE][KNIGHT].0.count_ones() * 320 +
+        board.piece_bbs[WHITE][BISHOP].0.count_ones() * 330 +
+        board.piece_bbs[WHITE][ROOK].0.count_ones() * 500 +
+        board.piece_bbs[WHITE][QUEEN].0.count_ones() * 900) as i32;
 
     return Estimate((material_white - material_black) as f32)
 }
@@ -108,6 +111,7 @@ pub struct MinMaxEvaluator {
     max_depth: usize,
     pub(crate) stats: Arc<Mutex<Stats>>,
 }
+
 const MAX_DEPTH: usize = 128;
 const KILLER_MOVE_SLOTS: usize = 2;
 type KillerMoves = [[Option<Move>; KILLER_MOVE_SLOTS]; MAX_DEPTH];
@@ -216,7 +220,7 @@ impl MinMaxEvaluator {
         }
 
         minmax_suggestion.unwrap_or_else(|| {
-            if board.kings & king_danger_mask != 0 {
+            if board.piece_bbs[board.active_player][KING] & king_danger_mask != 0 {
                 MoveSuggestion(Mate(board.active_player.next(), 0), None)
             } else {
                 MoveSuggestion(Stalemate, None)

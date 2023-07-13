@@ -12,11 +12,8 @@
     <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="Working bitboard movegen">
-      <change afterPath="$PROJECT_DIR$/src/lichess.rs" afterDir="false" />
+    <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="Lichess backend and move ordering">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/board.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/board.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/evaluator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/evaluator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
@@ -315,6 +312,7 @@
       <workItem from="1689005766635" duration="5412000" />
       <workItem from="1689060983682" duration="8666000" />
       <workItem from="1689237339624" duration="4351000" />
+      <workItem from="1689257581397" duration="2801000" />
     </task>
     <task id="LOCAL-00001" summary="Working bitboard movegen">
       <created>1688407043358</created>

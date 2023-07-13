@@ -32,12 +32,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(arg!(--uci "UCI output").default_value("false"))
         .get_matches();
 
-    // let fen: &String = matches.get_one("fen").unwrap();
-    // let mut board = Board::from_fen(fen).unwrap();
+    let fen: &String = matches.get_one("fen").unwrap();
+    let mut board = Board::from_fen(fen).unwrap();
+    board.legal_moves();
     //
     // lichess::start_event_loop().await;
 
-    run_engine();
+    // run_engine();
     // board.legal_moves();
 
 
@@ -62,10 +63,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    // for n in 1..10 {
-    //     let start = Instant::now();
-    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    // }
+    for n in 1..10 {
+        let start = Instant::now();
+        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    }
 
     // for start_move in board.legal_moves() {
     //

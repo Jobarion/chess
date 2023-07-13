@@ -285,12 +285,42 @@ impl Into<char> for PieceType {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PieceType {
-    PAWN,
-    ROOK,
-    KNIGHT,
-    BISHOP,
-    QUEEN,
-    KING
+    PAWN = 5,
+    KNIGHT = 4,
+    BISHOP = 3,
+    ROOK = 2,
+    QUEEN = 1,
+    KING = 0
+}
+
+impl<T, const N: usize> Index<PieceType> for [T; N] {
+    type Output = T;
+
+    fn index(&self, index: PieceType) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl<T, const N: usize> IndexMut<PieceType> for [T; N] {
+
+    fn index_mut(&mut self, index: PieceType) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
+
+impl<T, const N: usize> Index<Color> for [T; N] {
+    type Output = T;
+
+    fn index(&self, index: Color) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl<T, const N: usize> IndexMut<Color> for [T; N] {
+
+    fn index_mut(&mut self, index: Color) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
 }
 
 impl PieceType {
@@ -300,23 +330,12 @@ impl PieceType {
             _ => true
         }
     }
-
-    pub fn get_simple_val(&self) -> i32 {
-        match self {
-            PieceType::PAWN => 1,
-            PieceType::BISHOP => 3,
-            PieceType::KNIGHT => 3,
-            PieceType::ROOK => 5,
-            PieceType::QUEEN => 9,
-            PieceType::KING => 0
-        }
-    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Color {
-    WHITE,
-    BLACK
+    WHITE = 0,
+    BLACK = 1
 }
 
 impl Color {
