@@ -1,6 +1,6 @@
 
 use std::convert::TryFrom;
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::{Index, IndexMut, Not};
 
 use crate::board::board::{Board, BoardIndex, FILE_SIZE};
@@ -19,7 +19,7 @@ pub enum MoveAction {
     Castle(Square)
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Move {
     pub from: Square,
     pub to: Square,
@@ -182,7 +182,13 @@ impl Move {
 
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
-        write!(f, "{} -> {}", self.from, self.to)
+        write!(f, "{}", self.to_uci())
+    }
+}
+
+impl Debug for Move {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.to_uci())
     }
 }
 
@@ -292,6 +298,17 @@ impl PieceType {
         match self {
             KNIGHT | KING | PAWN => false,
             _ => true
+        }
+    }
+
+    pub fn get_simple_val(&self) -> i32 {
+        match self {
+            PieceType::PAWN => 1,
+            PieceType::BISHOP => 3,
+            PieceType::KNIGHT => 3,
+            PieceType::ROOK => 5,
+            PieceType::QUEEN => 9,
+            PieceType::KING => 0
         }
     }
 }

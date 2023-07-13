@@ -6,60 +6,44 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
-use clap::{App, Arg};
+use clap::arg;
 use console::Term;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
-use crate::evaluator::{MiniMaxEvaluator, MoveFinder, MoveSuggestion, Stats};
+use crate::evaluator::{MinMaxEvaluator, MoveFinder, MoveSuggestion, Stats};
 use crate::piece::{Color, Move, Square};
 
 mod board;
 mod bitboard;
 mod piece;
 mod evaluator;
+mod lichess;
 
 const TERMINAL: bool = true;
 const DEFAULT_DEPTH: u8 = 6;
 
-fn main() {
-    let matches = App::new("Chess")
-            .version("1.0")
-            .author("Jonas B. <jonas+chess@joba.me>")
-            .arg(Arg::with_name("fen")
-                .long("fen")
-                .help("FEN string")
-                .default_value("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
-            .arg(Arg::with_name("depth")
-                .long("depth")
-                .help("Evaluation depth")
-                .default_value("6"))
-            .arg(Arg::with_name("uci")
-                .long("uci")
-                .help("UCI output")
-                .default_value("false"))
-            .arg(Arg::with_name("moves")
-                .long("moves")
-                .help("Additional moves")
-                .default_value(""))
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let matches = clap::Command::new("Chess")
+        .version("1.0")
+        .author("Jonas B. <jonas+chess@joba.me>")
+        .arg(arg!(--fen <FEN> "FEN string").default_value("startpos"))
+        .arg(arg!(--depth <DEPTH> "Evaluation depth").default_value("6"))
+        .arg(arg!(--uci "UCI output").default_value("false"))
         .get_matches();
-    let fen = matches.value_of("fen");
-    let mut board = Board::from_fen(fen.unwrap().to_string()).unwrap();
 
-    // run_engine();
+    // let fen: &String = matches.get_one("fen").unwrap();
+    // let mut board = Board::from_fen(fen).unwrap();
+    //
+    // lichess::start_event_loop().await;
+
+    run_engine();
     // board.legal_moves();
-    
-    // println!("{}", board);
-    // board.print_highlighted(board.kogge_stone_avx2_queen());
-    // board.print_highlighted(board.kogge_stone_avx2_bishop());
-    // board.print_highlighted(board.kogge_stone_avx2_rook());
-    // compare_perft(fen.unwrap().to_string(), 3).unwrap();
+
 
     // compare_perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1".to_string(), 5).unwrap();
 
 
-
-    // let result = Board::generate_rook_all_moves(BitBoard(0) | Square::new(3, 4), BitBoard(0xFFFFFFFFFFFFFFFF));
-    // println!("{}", result);
 
     // let a = Move::from_uci("h3g2".to_string(), &board).unwrap();
     // println!("{}", board.to_fen());
@@ -78,10 +62,10 @@ fn main() {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    for n in 1..10 {
-        let start = Instant::now();
-        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    }
+    // for n in 1..10 {
+    //     let start = Instant::now();
+    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    // }
 
     // for start_move in board.legal_moves() {
     //
@@ -104,21 +88,34 @@ fn main() {
     //     // println!("{}", board.to_fen());
     //     board.undo_move(&piece_move);
     // }
+    Ok(())
 }
 
 fn run_engine() {
-    // let mut board = Board::from_fen("5rkr/qqqqqqq1/8/5B2/5NQ1/5BQ1/P4NQ1/KB4Q1 w - - 0 1".to_string()).unwrap();
-    let mut board = Board::from_fen("5rkr/qqq3q1/8/5B2/5N2/5B2/P4N2/KB4Q1 w - - 0 4".to_string()).unwrap();
-    let evaluator = MiniMaxEvaluator::new(9);
+    let mut board = Board::from_fen("8/4r3/8/k5r1/8/8/1P6/BKN5 w - - 0 1").unwrap();
+    let evaluator = MinMaxEvaluator::new(6);
+
+    // for n in 1..10 {
+    //     let evaluator = MiniMaxEvaluator::new(n);
+    //     let start = Instant::now();
+    //     let eval = evaluator.find_move(&mut board);
+    //     println!("eval depth {} {} in {}.{}s", n, eval.0, start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    // }
+
+    let moves: Vec<&str> = vec![];
+    for uci in moves {
+        let m = Move::from_uci(uci.to_string(), &board).unwrap();
+        board.apply_move(&m);
+    }
 
     loop {
+        println!("{}", board);
         if let MoveSuggestion(eval, Some(pmove)) = evaluator.find_move(&mut board) {
-            println!("{}", board);
-            println!("{:?}", board.legal_moves().legal_moves.into_iter().map(|x|x.to_uci()).collect_vec());
-            println!("{}", board.to_fen());
+            // println!("{:?}", board.legal_moves().legal_moves.into_iter().map(|x|x.to_uci()).collect_vec());
+            // println!("{}", board.to_fen());
             println!("Applying move: {}. Evaluation is {}\n", pmove.to_uci(), eval);
             board.apply_move(&pmove);
-            // break;
+            break;
         }
         else {
             break;
@@ -179,7 +176,7 @@ fn spawn_watch_thread(stats: Arc<Mutex<Stats>>, board: Board) {
 
 }
 
-fn compare_perft(fen: String, depth: u8) -> io::Result<()>{
+fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{
     println!("Comparing '{}' at depth {}", fen, depth);
     let mut child = Command::new("./stockfish")
         .stdout(Stdio::piped())
@@ -231,7 +228,7 @@ fn compare_perft(fen: String, depth: u8) -> io::Result<()>{
             board.apply_move(&bad_move);
             println!("{}\n\n", board);
             let new_fen = board.to_fen();
-            compare_perft(new_fen, depth - 1)
+            compare_perft(new_fen.as_str(), depth - 1)
         } else {
             println!("Found stockfish move we don't know. {}, stockfish {}, us {}", bad_move.to_uci(), scount, pcount);
             Ok(())

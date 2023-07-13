@@ -1175,7 +1175,10 @@ pub mod board {
             fen
         }
 
-        pub fn from_fen(fen: String) -> Option<Self> {
+        pub fn from_fen(mut fen: &str) -> Option<Self> {
+            if fen == "startpos" {
+                fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+            }
             let mut fen_parts: SplitWhitespace = fen.split_whitespace();
             let mut positions: Split<char> = fen_parts.next()?.split('/');
             let pieces = Board::parse_fen_board(positions)?;
