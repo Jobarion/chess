@@ -5,17 +5,49 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, N
 use std::process::Output;
 use core::option::Option;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
-use crate::board::board::{Board, LegalMoveData};
+use crate::board::board::{Board, GamePhase, LegalMoveData};
 use crate::Color::*;
 use crate::evaluator::Evaluation::{Estimate, Mate, Stalemate};
 use crate::piece::{Color, Move, MoveAction, Piece, PieceType, Square};
 use crate::piece::MoveAction::Normal;
 use crate::piece::PieceType::*;
 
-const MIN_EVAL: Evaluation = Mate(Color::BLACK, 0);
-const MAX_EVAL: Evaluation = Mate(Color::WHITE, 0);
+pub const MIN_EVAL: Evaluation = Mate(Color::BLACK, 0);
+pub const MAX_EVAL: Evaluation = Mate(Color::WHITE, 0);
+
+const PST_MG_PAWN: [i16; 64] = [0, 0, 0, 0, 0, 0, 0, 0, -35, -1, -20, -23, -15, 24, 38, -22, -26, -4, -4, -10, 3, 3, 33, -12, -27, -2, -5, 12, 17, 6, 10, -25, -14, 13, 6, 21, 23, 12, 17, -23, -6, 7, 26, 31, 65, 56, 25, -20, 98, 134, 61, 95, 68, 126, 34, -11, 0, 0, 0, 0, 0, 0, 0, 0];
+const PST_MG_KNIGHT: [i16; 64] = [-105, -21, -58, -33, -17, -28, -19, -23, -29, -53, -12, -3, -1, 18, -14, -19, -23, -9, 12, 10, 19, 17, 25, -16, -13, 4, 16, 13, 28, 19, 21, -8, -9, 17, 19, 53, 37, 69, 18, 22, -47, 60, 37, 65, 84, 129, 73, 44, -73, -41, 72, 36, 23, 62, 7, -17, -167, -89, -34, -49, 61, -97, -15, -107];
+const PST_MG_BISHOP: [i16; 64] = [-33, -3, -14, -21, -13, -12, -39, -21, 4, 15, 16, 0, 7, 21, 33, 1, 0, 15, 15, 15, 14, 27, 18, 10, -6, 13, 13, 26, 34, 12, 10, 4, -4, 5, 19, 50, 37, 37, 7, -2, -16, 37, 43, 40, 35, 50, 37, -2, -26, 16, -18, -13, 30, 59, 18, -47, -29, 4, -82, -37, -25, -42, 7, -8];
+const PST_MG_ROOK: [i16; 64] = [-19, -13, 1, 17, 16, 7, -37, -26, -44, -16, -20, -9, -1, 11, -6, -71, -45, -25, -16, -17, 3, 0, -5, -33, -36, -26, -12, -1, 9, -7, 6, -23, -24, -11, 7, 26, 24, 35, -8, -20, -5, 19, 26, 36, 17, 45, 61, 16, 27, 32, 58, 62, 80, 67, 26, 44, 32, 42, 32, 51, 63, 9, 31, 43];
+const PST_MG_QUEEN: [i16; 64] = [-1, -18, -9, 10, -15, -25, -31, -50, -35, -8, 11, 2, 8, 15, -3, 1, -14, 2, -11, -2, -5, 2, 14, 5, -9, -26, -9, -10, -2, -4, 3, -3, -27, -27, -16, -16, -1, 17, -2, 1, -13, -17, 7, 8, 29, 56, 47, 57, -24, -39, -5, 1, -16, 57, 28, 54, -28, 0, 29, 12, 59, 44, 43, 45];
+const PST_MG_KING: [i16; 64] = [-15, 36, 12, -54, 8, -28, 24, 14, 1, 7, -8, -64, -43, -16, 9, 8, -14, -14, -22, -46, -44, -30, -15, -27, -49, -1, -27, -39, -46, -44, -33, -51, -17, -20, -12, -27, -30, -25, -14, -36, -9, 24, 2, -16, -20, 6, 22, -22, 29, -1, -20, -7, -8, -4, -38, -29, -65, 23, 16, -15, -56, -34, 2, 13];
+
+const PST_EG_PAWN: [i16; 64] = [0, 0, 0, 0, 0, 0, 0, 0, 13, 8, 8, 10, 13, 0, 2, -7, 4, 7, -6, 1, 0, -5, -1, -8, 13, 9, -3, -7, -7, -8, 3, -1, 32, 24, 13, 5, -2, 4, 17, 17, 94, 100, 85, 67, 56, 53, 82, 84, 178, 173, 158, 134, 147, 132, 165, 187, 0, 0, 0, 0, 0, 0, 0, 0];
+const PST_EG_KNIGHT: [i16; 64] = [-29, -51, -23, -15, -22, -18, -50, -64, -42, -20, -10, -5, -2, -20, -23, -44, -23, -3, -1, 15, 10, -3, -20, -22, -18, -6, 16, 25, 16, 17, 4, -18, -17, 3, 22, 22, 22, 11, 8, -18, -24, -20, 10, 9, -1, -9, -19, -41, -25, -8, -25, -2, -9, -25, -24, -52, -58, -38, -13, -28, -31, -27, -63, -99];
+const PST_EG_BISHOP: [i16; 64] = [-23, -9, -23, -5, -9, -16, -5, -17, -14, -18, -7, -1, 4, -9, -15, -27, -12, -3, 8, 10, 13, 3, -7, -15, -6, 3, 13, 19, 7, 10, -3, -9, -3, 9, 12, 9, 14, 10, 3, 2, 2, -8, 0, -1, -2, 6, 0, 4, -8, -4, 7, -12, -3, -13, -4, -14, -14, -21, -11, -8, -7, -9, -17, -24];
+const PST_EG_ROOK: [i16; 64] = [-9, 2, 3, -1, -5, -13, 4, -20, -6, -6, 0, 2, -9, -9, -11, -3, -4, 0, -5, -1, -7, -12, -8, -16, 3, 5, 8, 4, -5, -6, -8, -11, 4, 3, 13, 1, 2, 1, -1, 2, 7, 7, 7, 5, 4, -3, -5, -3, 11, 13, 13, 11, -3, 3, 8, 3, 13, 10, 18, 15, 12, 12, 8, 5];
+const PST_EG_QUEEN: [i16; 64] = [-33, -28, -22, -43, -5, -32, -20, -41, -22, -23, -30, -16, -16, -23, -36, -32, -16, -27, 15, 6, 9, 17, 10, 5, -18, 28, 19, 47, 31, 34, 39, 23, 3, 22, 24, 45, 57, 40, 57, 36, -20, 6, 9, 49, 47, 35, 19, 9, -17, 20, 32, 41, 58, 25, 30, 0, -9, 22, 22, 27, 27, 19, 10, 20];
+const PST_EG_KING: [i16; 64] = [-53, -34, -21, -11, -28, -14, -24, -43, -27, -11, 4, 13, 14, 4, -5, -17, -19, -3, 11, 21, 23, 16, 7, -9, -18, -4, 21, 24, 27, 23, 9, -11, -8, 22, 24, 27, 26, 33, 26, 3, 10, 17, 23, 15, 20, 45, 44, 13, -12, 17, 14, 17, 17, 38, 23, 11, -74, -35, -18, -18, -11, 15, 4, -17];
+
+const PST_PAWN: [[i16; 64]; 2] = [PST_MG_PAWN, PST_EG_PAWN];
+const PST_KNIGHT: [[i16; 64]; 2] = [PST_MG_KNIGHT, PST_EG_KNIGHT];
+const PST_BISHOP: [[i16; 64]; 2] = [PST_MG_BISHOP, PST_EG_BISHOP];
+const PST_ROOK: [[i16; 64]; 2] = [PST_MG_ROOK, PST_EG_ROOK];
+const PST_QUEEN: [[i16; 64]; 2] = [PST_MG_QUEEN, PST_EG_QUEEN];
+const PST_KING: [[i16; 64]; 2] = [PST_MG_KING, PST_EG_KING];
+
+pub const PST: [[[i16; 64]; 6]; 2] = [
+    [PST_MG_PAWN, PST_MG_KNIGHT, PST_MG_BISHOP, PST_MG_ROOK, PST_MG_QUEEN, PST_MG_KING],
+    [PST_EG_PAWN, PST_EG_KNIGHT, PST_EG_BISHOP, PST_EG_ROOK, PST_EG_QUEEN, PST_EG_KING]
+];
+
+const PIECE_VALUE_MG: [u32; 6] = [0, 1025, 477, 365, 337, 82];
+const PIECE_VALUE_EG: [u32; 6] = [0, 936, 512, 297, 281, 94];
+
+pub const PIECE_VALUE: [[u32; 6]; 2] = [PIECE_VALUE_MG, PIECE_VALUE_EG];
 
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -24,12 +56,9 @@ pub enum Evaluation {
     Estimate(f32),
     Stalemate
 }
-pub trait Evaluator {
-    fn evaluate_board(&self, board: &mut Board) -> Evaluation;
-}
 
 pub trait MoveFinder {
-    fn find_move(&self, board: &mut Board) -> MoveSuggestion;
+    fn find_move(&self, board: &mut Board, meta: &mut MinMaxMetadata) -> MoveSuggestion;
 }
 
 impl Eq for Evaluation {}
@@ -83,21 +112,11 @@ impl Display for Evaluation {
 }
 
 pub fn eval_position_direct(board: &Board) -> Evaluation {
-    let material_black = (board.piece_bbs[BLACK][PAWN].0.count_ones() * 100 +
-        board.piece_bbs[BLACK][KNIGHT].0.count_ones() * 320 +
-        board.piece_bbs[BLACK][BISHOP].0.count_ones() * 330 +
-        board.piece_bbs[BLACK][ROOK].0.count_ones() * 500 +
-        board.piece_bbs[BLACK][QUEEN].0.count_ones() * 900) as i32;
+    let mut material_eval: i32 = board.eval_info.material[WHITE] as i32 - board.eval_info.material[BLACK] as i32;
+    let mut pst_eval: i16 = board.eval_info.psqt[WHITE] - board.eval_info.psqt[BLACK];
 
-    let material_white = (board.piece_bbs[WHITE][PAWN].0.count_ones() * 100 +
-        board.piece_bbs[WHITE][KNIGHT].0.count_ones() * 320 +
-        board.piece_bbs[WHITE][BISHOP].0.count_ones() * 330 +
-        board.piece_bbs[WHITE][ROOK].0.count_ones() * 500 +
-        board.piece_bbs[WHITE][QUEEN].0.count_ones() * 900) as i32;
-
-    return Estimate((material_white - material_black) as f32)
+    return Estimate((material_eval + pst_eval as i32) as f32)
 }
-
 
 #[derive(Debug, Copy, Clone)]
 pub struct MoveSuggestion(pub Evaluation, pub Option<Move>);
@@ -108,8 +127,7 @@ pub struct Stats {
 }
 
 pub struct MinMaxEvaluator {
-    max_depth: usize,
-    pub(crate) stats: Arc<Mutex<Stats>>,
+    max_depth: usize
 }
 
 const MAX_DEPTH: usize = 128;
@@ -117,38 +135,49 @@ const KILLER_MOVE_SLOTS: usize = 2;
 type KillerMoves = [[Option<Move>; KILLER_MOVE_SLOTS]; MAX_DEPTH];
 type ScoredMove = (Move, u32);
 
-struct MinMaxMetadata {
+pub struct MinMaxMetadata {
     pub killer_moves: KillerMoves,
     pub ply: usize,
     pub node_count: u64,
     pub path: Vec<Move>,
+    pub max_time: u128,
+    pub should_terminate: bool,
 }
 
 impl MinMaxMetadata {
-    pub fn new() -> MinMaxMetadata {
+    pub fn new(max_time: u128) -> MinMaxMetadata {
         MinMaxMetadata {
             killer_moves: [[None; KILLER_MOVE_SLOTS]; MAX_DEPTH],
             ply: 0,
             node_count: 0,
             path: vec![],
+            max_time,
+            should_terminate: false,
+        }
+    }
+
+    pub fn check_termination(&mut self) {
+        if !self.should_terminate && self.node_count % 5000 == 0 {
+            let time = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards");
+            if self.max_time != 0 && self.max_time < time.as_millis() {
+                self.should_terminate = true;
+            }
         }
     }
 }
 
 impl MinMaxEvaluator {
 
-    pub(crate) fn new(max_depth: usize) -> MinMaxEvaluator {
-        MinMaxEvaluator {max_depth, stats: Arc::new(Mutex::new(Stats { evaluated_positions: 0, best_move: None })) }
-    }
-
-    pub fn reset_stats(&self) {
-        let stats = Arc::clone(&self.stats);
-        let mut stats = stats.lock().unwrap();
-        (*stats).evaluated_positions = 0;
-        (*stats).best_move = None;
+    pub fn new(max_depth: usize) -> MinMaxEvaluator {
+        MinMaxEvaluator { max_depth }
     }
 
     fn eval_minmax(&self, max_depth: usize, mut board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, max: bool, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
+        meta.check_termination();
+        if meta.should_terminate {
+            return MoveSuggestion(MIN_EVAL, None)
+        }
+
         meta.node_count += 1;
         if board.halfmove_clock >= 50 {
             return MoveSuggestion(Stalemate, None);
@@ -302,22 +331,13 @@ impl MinMaxEvaluator {
 }
 
 impl MoveFinder for MinMaxEvaluator {
-    fn find_move(&self, board: &mut Board) -> MoveSuggestion {
-
-        let mut meta = MinMaxMetadata::new();
+    fn find_move(&self, board: &mut Board, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
 
         let move_suggestion = match board.active_player {
             Color::WHITE => self.eval_minmax(self.max_depth, board, Mate(Color::BLACK, 0), Mate(Color::WHITE, 0), true, &mut meta),
             Color::BLACK => self.eval_minmax(self.max_depth, board, Mate(Color::BLACK, 0), Mate(Color::WHITE, 0), false, &mut meta),
         };
 
-        println!("Nodes searched: {}", meta.node_count);
         move_suggestion
-    }
-}
-
-impl Evaluator for MinMaxEvaluator {
-    fn evaluate_board(&self, board: &mut Board) -> Evaluation {
-        self.find_move(board).0
     }
 }

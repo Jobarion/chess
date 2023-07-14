@@ -5,12 +5,13 @@ use std::io::{Error, Write};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::arg;
 use console::Term;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
-use crate::evaluator::{MinMaxEvaluator, MoveFinder, MoveSuggestion, Stats};
+use crate::evaluator::{eval_position_direct, MinMaxEvaluator, MinMaxMetadata, MoveFinder, MoveSuggestion};
+use crate::iter_deep::eval_iter_deep;
 use crate::piece::{Color, Move, Square};
 
 mod board;
@@ -18,6 +19,7 @@ mod bitboard;
 mod piece;
 mod evaluator;
 mod lichess;
+mod iter_deep;
 
 const TERMINAL: bool = true;
 const DEFAULT_DEPTH: u8 = 6;
@@ -34,12 +36,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fen: &String = matches.get_one("fen").unwrap();
     let mut board = Board::from_fen(fen).unwrap();
-    board.legal_moves();
-    //
-    // lichess::start_event_loop().await;
+
+    lichess::start_event_loop().await;
 
     // run_engine();
-    // board.legal_moves();
 
 
     // compare_perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1".to_string(), 5).unwrap();
@@ -63,10 +63,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    for n in 1..10 {
-        let start = Instant::now();
-        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    }
+    // for n in 1..10 {
+    //     let start = Instant::now();
+    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    // }
 
     // for start_move in board.legal_moves() {
     //
@@ -93,88 +93,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_engine() {
-    let mut board = Board::from_fen("8/4r3/8/k5r1/8/8/1P6/BKN5 w - - 0 1").unwrap();
-    let evaluator = MinMaxEvaluator::new(6);
+    let mut board = Board::from_fen("6k1/3qrpp1/pp5p/1r5n/8/1P3PP1/PQ4BP/2R3K1 w - - 0 1").unwrap();
 
     // for n in 1..10 {
-    //     let evaluator = MiniMaxEvaluator::new(n);
+    //     let evaluator = MinMaxEvaluator::new(n);
     //     let start = Instant::now();
-    //     let eval = evaluator.find_move(&mut board);
+    //     let eval = evaluator.find_move(&mut board, &mut MinMaxMetadata::new(0));
     //     println!("eval depth {} {} in {}.{}s", n, eval.0, start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
     // }
-
-    let moves: Vec<&str> = vec![];
-    for uci in moves {
-        let m = Move::from_uci(uci.to_string(), &board).unwrap();
-        board.apply_move(&m);
-    }
-
-    loop {
-        println!("{}", board);
-        if let MoveSuggestion(eval, Some(pmove)) = evaluator.find_move(&mut board) {
-            // println!("{:?}", board.legal_moves().legal_moves.into_iter().map(|x|x.to_uci()).collect_vec());
-            // println!("{}", board.to_fen());
-            println!("Applying move: {}. Evaluation is {}\n", pmove.to_uci(), eval);
-            board.apply_move(&pmove);
-            break;
-        }
-        else {
-            break;
-        }
-    }
-
-    // for i in 0..1 {
-    //     spawn_watch_thread(evaluator.stats.clone(), board.clone());
-    //     let start = SystemTime::now();
-    //     let MoveSuggestion(eval, m_opt) = evaluator.find_move(&mut board);
-    //     evaluator.reset_stats();
-    //     if let None = m_opt {
-    //         println!("Game over. {:?}", eval);
-    //         break;
-    //     }
-    //
-    //     let m = m_opt.unwrap();
-    //     let since_the_epoch = SystemTime::now().duration_since(start)
-    //         .expect("Time went backwards");
-    //     println!("Move: {} ({})", m.to_uci(), eval);
-    //     println!();
-    //     board.apply_move(&m);
-    //     println!("{}", board);
-    // }
-}
-
-fn spawn_watch_thread(stats: Arc<Mutex<Stats>>, board: Board) {
-    thread::spawn(move || {
-        let mut term = Term::stdout();
-        let mut last = 0;
-        loop {
-            thread::sleep(Duration::from_millis(500));
-            let mut stats = stats.lock().unwrap();
-            let current = (*stats).evaluated_positions;
-            let best_move =(*stats).best_move.clone();
-            let best_move = match best_move {
-                None => "Best move: ?".to_string(),
-                Some(MoveSuggestion(eval, None)) => eval.to_string(),
-                Some(MoveSuggestion(eval, Some(mv))) => format_args!("Best move: {} ({})", mv.to_uci(), eval).to_string(),
-            };
-
-            if current < last {
-                break;
-            }
-            let diff = (current - last) * 2;
-            last = current;
-            if TERMINAL {
-                term.clear_last_lines(2);
-                // term.write_fmt(format_args!("Evaluated {} boards/sec ({} total)\n", diff, current));
-                // term.write_line(best_move.as_str());
-            }
-            else {
-                // println!("Evaluated {} boards/sec ({} total)", diff, current);
-                // println!("{}", best_move);
-            }
-        }
-    });
-
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
+    let result = eval_iter_deep(&mut board, now + 10*1000);
+    println!("{:?}", result);
 }
 
 fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{

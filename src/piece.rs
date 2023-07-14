@@ -1,7 +1,7 @@
 
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::ops::{Index, IndexMut, Not};
+use std::ops::{Index, IndexMut, Not, Range, RangeInclusive};
 
 use crate::board::board::{Board, BoardIndex, FILE_SIZE};
 use crate::piece::Color::*;
@@ -30,6 +30,10 @@ pub struct Move {
 impl Square {
     pub(crate) const fn new(file: BoardIndex, rank: BoardIndex) -> Square {
         Square(rank * 8 + file)
+    }
+
+    pub fn flip(&self) -> Square {
+        Square(self.0 ^ 56)
     }
 
     pub fn file(&self) -> BoardIndex {
@@ -291,6 +295,10 @@ pub enum PieceType {
     ROOK = 2,
     QUEEN = 1,
     KING = 0
+}
+
+impl PieceType {
+    pub const PIECES: RangeInclusive<usize> = (KING as usize)..=(PAWN as usize);
 }
 
 impl<T, const N: usize> Index<PieceType> for [T; N] {

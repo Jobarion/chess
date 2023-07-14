@@ -1,5 +1,7 @@
+use std::cmp::{max, min};
 use std::error::Error;
 use std::io::ErrorKind;
+use std::time::{SystemTime, UNIX_EPOCH};
 use clap::builder::Str;
 use tokio_util::io::StreamReader;
 use futures_util::stream::TryStreamExt;
@@ -10,8 +12,9 @@ use tokio::io::AsyncBufReadExt;
 use serde::{Serialize, Deserialize};
 use serde::ser::StdError;
 use tokio::spawn;
-use crate::{Board, Color, MinMaxEvaluator, Move, MoveFinder, MoveSuggestion};
+use crate::{Board, Color, eval_iter_deep, MinMaxEvaluator, Move, MoveFinder, MoveSuggestion};
 use crate::Color::{BLACK, WHITE};
+use crate::evaluator::MinMaxMetadata;
 use crate::lichess::BotEvent::{Challenge, GameStart};
 use crate::lichess::GameEvent::GameFull;
 
@@ -127,8 +130,10 @@ struct Player {
 #[derive(Deserialize, Debug)]
 struct GameState {
     moves: String,
-    wtime: u32,
-    btime: u32
+    wtime: u64,
+    btime: u64,
+    winc: u64,
+    binc: u64,
 }
 
 #[tokio::main]
@@ -155,6 +160,10 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
         // println!("Game loop, event = {:?}", event);
 
         let mut board_opt: Option<Board> = None;
+        let mut us_time = 0_u64;
+        let mut them_time = 0_u64;
+        let mut us_inc = 0_u64;
+        let mut them_inc = 0_u64;
 
         match event {
             GameEvent::GameState{ state } => {
@@ -163,6 +172,20 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
                     for uci in state.moves.split(" ").filter(|m| m.len() >= 4) {
                         let m = Move::from_uci(uci.to_string(), &board).unwrap();
                         board.apply_move(&m);
+                    }
+                    if let Some(color) = color_opt {
+                        if color == WHITE {
+                            us_time = state.wtime;
+                            them_time = state.btime;
+                            us_inc = state.winc;
+                            them_inc = state.binc;
+                        }
+                        else {
+                            them_time = state.wtime;
+                            us_time = state.btime;
+                            them_inc = state.winc;
+                            us_inc = state.binc;
+                        }
                     }
                     board_opt = Some(board);
                 }
@@ -178,11 +201,20 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
                     }
                     board_opt = Some(board);
                 }
+
                 if white.id == BOT_ID.to_string() {
                     color_opt = Some(WHITE);
+                    us_time = state.wtime;
+                    them_time = state.btime;
+                    us_inc = state.winc;
+                    them_inc = state.binc;
                 }
                 else if black.id == BOT_ID.to_string() {
                     color_opt = Some(BLACK);
+                    them_time = state.wtime;
+                    us_time = state.btime;
+                    them_inc = state.winc;
+                    us_inc = state.binc;
                 }
             },
             GameEvent::KeepAlive => (),
@@ -193,10 +225,15 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
             if let Some(color) = color_opt {
                 if board.active_player == color {
                     println!("It's my turn");
-                    let evaluator = MinMaxEvaluator::new(7);
-                    if let MoveSuggestion(eval, Some(pmove)) = evaluator.find_move(&mut board) {
+                    println!("We have {}s, they have {}s", us_time / 1000, them_time / 1000);
+                    let max_time = calc_move_time(us_time, them_time, us_inc, them_inc);
+                    let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+                    let end_time = time + max_time as u128;
+                    if let Some(MoveSuggestion(eval, Some(pmove))) = eval_iter_deep(&mut board, end_time) {
                         println!("Best move '{}', eval: '{}'", pmove, eval);
                         make_move(id.clone(), pmove.to_uci()).await?;
+                    } else {
+                        println!("Couldn't find move");
                     }
                 }
                 else {
@@ -209,6 +246,20 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
         }
     }
     Ok(())
+}
+
+fn calc_move_time(us_time: u64, them_time: u64, us_inc: u64, them_inc: u64) -> u64 {
+    if us_time >= 1_000_000 {
+        return 20 * 1000;
+    }
+    if them_time > us_time {
+        //Expect the game to take 30 more moves (incl. incr).
+        //If time is low and increment high, just take half of our time and live of increment.
+        println!("{} {} {} {}", us_time, us_inc, us_time / 30 + us_inc, us_time / 2);
+        min(us_time / 30 + us_inc, us_time / 2)
+    } else {
+        them_time / 30 + (us_time - them_time) / 5 //Use up our time advantage
+    }
 }
 
 async fn make_move(id: String, uci: String) -> Result<Response, reqwest::Error> {

@@ -12,10 +12,12 @@
     <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="Lichess backend and move ordering">
+    <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="Bitboards in array">
+      <change afterPath="$PROJECT_DIR$/src/iter_deep.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/board.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/board.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/evaluator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/evaluator.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lichess.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lichess.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/piece.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/piece.rs" afterDir="false" />
     </list>
@@ -156,7 +158,7 @@
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/../rustic" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$/src" />
     <property name="org.rust.cargo.project.model.PROJECT_DISCOVERY" value="true" />
     <property name="settings.editor.selected.configurable" value="language.rust.cargo.check" />
   </component>
@@ -312,7 +314,7 @@
       <workItem from="1689005766635" duration="5412000" />
       <workItem from="1689060983682" duration="8666000" />
       <workItem from="1689237339624" duration="4351000" />
-      <workItem from="1689257581397" duration="2801000" />
+      <workItem from="1689257581397" duration="22291000" />
     </task>
     <task id="LOCAL-00001" summary="Working bitboard movegen">
       <created>1688407043358</created>
@@ -321,7 +323,14 @@
       <option name="project" value="LOCAL" />
       <updated>1688407043358</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="Bitboards in array">
+      <created>1689260679831</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1689260679831</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TestHistory">
@@ -404,7 +413,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Working bitboard movegen" />
-    <option name="LAST_COMMIT_MESSAGE" value="Working bitboard movegen" />
+    <MESSAGE value="Bitboards in array" />
+    <option name="LAST_COMMIT_MESSAGE" value="Bitboards in array" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

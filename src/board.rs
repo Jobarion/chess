@@ -5,7 +5,7 @@ pub mod board {
     use std::convert::{Into, TryFrom};
     use std::ffi::c_int;
     use std::fmt::{Display, Error, Formatter, Write};
-    use std::ops::Not;
+    use std::ops::{Index, IndexMut, Not};
     use std::pin::pin;
     use std::str::Split;
     use std::str::SplitWhitespace;
@@ -14,6 +14,7 @@ pub mod board {
 
     use crate::bitboard::{BISHOP_MOVES, BitBoard, DIAGONALS_NE_SW, DIAGONALS_NW_SE, FILES, KING_MOVES, KNIGHT_MOVES, PAWN_CAPTURE_MOVES_BLACK, PAWN_CAPTURE_MOVES_WHITE, PAWN_MOVES_BLACK, PAWN_MOVES_WHITE, RANKS, ROOK_MOVES};
     use crate::board::board::CastleState::{Allowed, Forbidden};
+    use crate::evaluator::{PIECE_VALUE, PST};
     use crate::piece::*;
     use crate::piece::PieceType::*;
     use crate::piece::Color::*;
@@ -86,6 +87,34 @@ pub mod board {
     }
 
     #[derive(Copy, Clone, Debug)]
+    pub enum GamePhase {
+        MIDGAME = 0,
+        ENDGAME = 1,
+    }
+
+    impl<T, const N: usize> Index<GamePhase> for [T; N] {
+        type Output = T;
+
+        fn index(&self, index: GamePhase) -> &Self::Output {
+            &self[index as usize]
+        }
+    }
+
+    impl<T, const N: usize> IndexMut<GamePhase> for [T; N] {
+
+        fn index_mut(&mut self, index: GamePhase) -> &mut Self::Output {
+            &mut self[index as usize]
+        }
+    }
+
+    #[derive(Copy, Clone, Debug)]
+    pub struct EvalInfo {
+        pub material: [u32; 2],
+        pub psqt: [i16; 2],
+        pub game_phase: GamePhase
+    }
+
+    #[derive(Copy, Clone, Debug)]
     pub struct Board {
         pub board: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize],
         pub active_player: Color,
@@ -97,14 +126,15 @@ pub mod board {
 
         pub piece_bbs: [[BitBoard; 6]; 2],
         pub color_bbs: [BitBoard; 2],
+        pub eval_info: EvalInfo,
     }
     //rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 
     impl Board {
 
-        fn new(board: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize], active_player: Color, castling_options_white: (CastleState, CastleState), castling_options_black: (CastleState, CastleState), en_passant_square: Option<Square>, halfmove_clock: u32, fullmove: u32) -> Board {
+        fn new(piece_table: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize], active_player: Color, castling_options_white: (CastleState, CastleState), castling_options_black: (CastleState, CastleState), en_passant_square: Option<Square>, halfmove_clock: u32, fullmove: u32) -> Board {
             let mut board = Board {
-                board,
+                board: [None; 64],
                 active_player,
                 castling_options_white,
                 castling_options_black,
@@ -113,9 +143,14 @@ pub mod board {
                 fullmove,
                 piece_bbs: [[BitBoard(0); 6]; 2],
                 color_bbs: [BitBoard(0); 2],
+                eval_info: EvalInfo {
+                    material: [0; 2],
+                    psqt: [0; 2],
+                    game_phase: GamePhase::MIDGAME
+                }
             };
             for n in 0..64 {
-                let piece = board.board[n as usize];
+                let piece = piece_table[n as usize];
                 if let Some(p) = piece {
                     board.set(p, Square(n));
                 }
@@ -133,6 +168,14 @@ pub mod board {
             self.board[sqr] = Some(piece);
             self.piece_bbs[piece.color][piece.piece_type] |= sqr;
             self.color_bbs[piece.color] |= sqr;
+
+            self.eval_info.material[piece.color] += PIECE_VALUE[self.eval_info.game_phase][piece.piece_type];
+            let correct_square = match piece.color {
+                WHITE => sqr,
+                BLACK => sqr.flip()
+            };
+            self.eval_info.psqt[piece.color] += PST[self.eval_info.game_phase][piece.piece_type][correct_square];
+
             previous
         }
 
@@ -142,6 +185,13 @@ pub mod board {
                 self.board[sqr] = None;
                 self.piece_bbs[piece.color][piece.piece_type] &= anti_mask;
                 self.color_bbs[piece.color] &= anti_mask;
+                self.eval_info.material[piece.color] -= PIECE_VALUE[self.eval_info.game_phase][piece.piece_type];
+                let correct_square = match piece.color {
+                    WHITE => sqr,
+                    BLACK => sqr.flip()
+                };
+                self.eval_info.psqt[piece.color] -= PST[self.eval_info.game_phase][piece.piece_type][correct_square];
+
                 Some(piece)
             } else {
                 None
@@ -158,15 +208,15 @@ pub mod board {
             let old_ep_square = self.en_passant_square;
             self.en_passant_square = None;
             match piece_move {
-                Move{from, to, move_type: MoveAction::Promotion(promotion_type, _), previous_ep_square} => {
+                Move{to, move_type: MoveAction::Promotion(promotion_type, _), ..} => {
                     self.set(Piece{piece_type: *promotion_type, color: self.active_player}, *to);
                     self.halfmove_clock = 0;
                 },
-                Move{from, to, move_type: MoveAction::Capture(_), previous_ep_square} => {
+                Move{to, move_type: MoveAction::Capture(_), ..} => {
                     self.set(moved_piece, *to);
                     self.halfmove_clock = 0;
                 },
-                Move{from, to, move_type: MoveAction::Normal, previous_ep_square} if moved_piece.piece_type == PAWN => {
+                Move{from, to, move_type: MoveAction::Normal, ..} if moved_piece.piece_type == PAWN => {
                     let pawn_starting_rank = match self.active_player {
                         WHITE => 1,
                         BLACK => 6
@@ -177,17 +227,17 @@ pub mod board {
                     self.set(moved_piece, *to);
                     self.halfmove_clock = 0;
                 }
-                Move{from, to, move_type: MoveAction::Normal, previous_ep_square} => {
+                Move{to, move_type: MoveAction::Normal, ..} => {
                     self.set(moved_piece, *to);
                     // self.halfmove_clock += 1;
                 }
-                Move{from, to, move_type: MoveAction::EnPassant, previous_ep_square} => {
+                Move{from, to, move_type: MoveAction::EnPassant, ..} => {
                     self.set(moved_piece, *to);
                     let old_ep_square = old_ep_square.expect("EnPassant move requires en passant square");
                     self.unset(Square::new(old_ep_square.file(), from.rank()));
                     self.halfmove_clock = 0;
                 }
-                Move { from, to, move_type: MoveAction::Castle(csquare), previous_ep_square: _ } => {
+                Move { to, move_type: MoveAction::Castle(csquare), ..} => {
                     self.set(moved_piece, *to);
                     let rook = self.unset(Square::new(if csquare.file() == 3 { 0 } else { 7 }, csquare.rank())).unwrap();
                     self.set(rook, *csquare);
