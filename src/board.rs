@@ -4,8 +4,10 @@ pub mod board {
     use std::ops::{Index, IndexMut, Not};
     use std::str::Split;
     use std::str::SplitWhitespace;
+    use futures_util::stream::All;
 
     use itertools::Itertools;
+    use tokio::time::Instant;
 
     use crate::bitboard::*;
     use crate::board::board::CastleState::{Allowed, Forbidden};
@@ -124,10 +126,10 @@ pub mod board {
         fn new(piece_table: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize], active_player: Color, castling_options_white: (CastleState, CastleState), castling_options_black: (CastleState, CastleState), en_passant_square: Option<Square>, halfmove_clock: u32, fullmove: u32) -> Board {
             let mut board = Board {
                 board: [None; 64],
-                active_player,
-                castling_options_white,
-                castling_options_black,
-                en_passant_square,
+                active_player: WHITE,
+                castling_options_white: (Allowed, Allowed),
+                castling_options_black: (Allowed, Allowed),
+                en_passant_square: None,
                 halfmove_clock,
                 fullmove,
                 zobrist_key: 0,
@@ -139,12 +141,18 @@ pub mod board {
                     game_phase: GamePhase::MIDGAME
                 }
             };
+
             for n in 0..64 {
                 let piece = piece_table[n as usize];
                 if let Some(p) = piece {
                     board.set(p, Square(n));
                 }
             }
+            if active_player != WHITE {
+                board.change_active();
+            }
+            board.set_castle_options(castling_options_white, castling_options_black);
+            board.set_ep_square(en_passant_square);
             board
         }
 
@@ -190,7 +198,7 @@ pub mod board {
             }
         }
 
-        fn change_active(&mut self) {
+        pub fn change_active(&mut self) {
             self.zobrist_key ^= Zobrist::SIDE;
             self.active_player = !self.active_player;
         }
@@ -203,6 +211,23 @@ pub mod board {
             if let Some(old) = self.en_passant_square {
                 self.zobrist_key ^= Zobrist::EP_RANK[old.rank()];
             }
+        }
+
+        fn set_castle_options(&mut self, white: (CastleState, CastleState), black: (CastleState, CastleState)) {
+            if self.castling_options_white.0 != white.0 {
+                self.zobrist_key ^= Zobrist::CASTLING[0];
+            }
+            if self.castling_options_white.1 != white.1 {
+                self.zobrist_key ^= Zobrist::CASTLING[1];
+            }
+            if self.castling_options_black.0 != black.0 {
+                self.zobrist_key ^= Zobrist::CASTLING[2];
+            }
+            if self.castling_options_black.1 != black.1 {
+                self.zobrist_key ^= Zobrist::CASTLING[3];
+            }
+            self.castling_options_white = white;
+            self.castling_options_black = black;
         }
 
         pub fn occupied(&self) -> BitBoard {
@@ -252,8 +277,10 @@ pub mod board {
             }
             self.set_ep_square(new_ep_square);
             //Capturing the rook doesn't change castle options
+            let mut copt_white = self.castling_options_white.clone();
+            let mut copt_black = self.castling_options_black.clone();
             if self.castling_options_white.0 == Allowed {
-                self.castling_options_white.0 = match moved_piece {
+                copt_white.0 = match moved_piece {
                     Piece {piece_type: KING, color: WHITE} => Forbidden(self.fullmove * 2),
                     Piece {piece_type: ROOK, color: WHITE} if piece_move.from == Square::new(0, 0) => Forbidden(self.fullmove * 2),
                     _ if piece_move.to == Square::new(0, 0) => Forbidden(self.fullmove * 2 + 1), //Capture
@@ -261,7 +288,7 @@ pub mod board {
                 }
             }
             if self.castling_options_white.1 == Allowed {
-                self.castling_options_white.1 = match moved_piece {
+                copt_white.1 = match moved_piece {
                     Piece {piece_type: KING, color: WHITE} => Forbidden(self.fullmove * 2),
                     Piece {piece_type: ROOK, color: WHITE} if piece_move.from == Square::new(7, 0) => Forbidden(self.fullmove * 2),
                     _ if piece_move.to == Square::new(7, 0) => Forbidden(self.fullmove * 2 + 1), //Capture
@@ -269,7 +296,7 @@ pub mod board {
                 }
             }
             if self.castling_options_black.0 == Allowed {
-                self.castling_options_black.0 = match moved_piece {
+                copt_black.0 = match moved_piece {
                     Piece {piece_type: KING, color: BLACK} => Forbidden(self.fullmove * 2 + 1),
                     Piece {piece_type: ROOK, color: BLACK} if piece_move.from == Square::new(0, 7) => Forbidden(self.fullmove * 2 + 1),
                     _ if piece_move.to == Square::new(0, 7) => Forbidden(self.fullmove * 2), //Capture
@@ -277,13 +304,14 @@ pub mod board {
                 }
             }
             if self.castling_options_black.1 == Allowed {
-                self.castling_options_black.1 = match moved_piece {
+                copt_black.1 = match moved_piece {
                     Piece {piece_type: KING, color: BLACK} => Forbidden(self.fullmove * 2 + 1),
                     Piece {piece_type: ROOK, color: BLACK} if piece_move.from == Square::new(7, 7) => Forbidden(self.fullmove * 2 + 1),
                     _ if piece_move.to == Square::new(7, 7) => Forbidden(self.fullmove * 2), //Capture
                     _ => Allowed
                 }
             }
+            self.set_castle_options(copt_white, copt_black);
             if self.active_player == BLACK {
                 self.fullmove += 1;
             }
@@ -300,26 +328,29 @@ pub mod board {
             } else {
                 self.fullmove * 2 + 1
             };
-            self.castling_options_white.0 = match self.castling_options_white.0 {
+            let mut copt_white = (Allowed, Allowed);
+            let mut copt_black = (Allowed, Allowed);
+            copt_white.0 = match self.castling_options_white.0 {
                 Forbidden(m) if m == half_move_timer => Allowed,
                 _ => self.castling_options_white.0
             };
-            self.castling_options_white.1 = match self.castling_options_white.1 {
+            copt_white.1 = match self.castling_options_white.1 {
                 Forbidden(m) if m == half_move_timer => Allowed,
                 _ => self.castling_options_white.1
             };
-            self.castling_options_black.0 = match self.castling_options_black.0 {
+            copt_black.0 = match self.castling_options_black.0 {
                 Forbidden(m) if m == half_move_timer => Allowed,
                 _ => self.castling_options_black.0
             };
-            self.castling_options_black.1 = match self.castling_options_black.1 {
+            copt_black.1 = match self.castling_options_black.1 {
                 Forbidden(m) if m == half_move_timer => Allowed,
                 _ => self.castling_options_black.1
             };
+            self.set_castle_options(copt_white, copt_black);
             let moved_piece = self.unset(piece_move.to).unwrap();
 
             debug_assert_eq!(moved_piece.color, self.active_player);
-            self.en_passant_square = piece_move.previous_ep_square;
+            self.set_ep_square(piece_move.previous_ep_square);
 
             match piece_move {
                 Move{from, to, move_type: MoveAction::Promotion(_, None), previous_ep_square } => {

@@ -11,6 +11,7 @@ use console::Term;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
 use crate::evaluator::{eval_position_direct, MinMaxEvaluator, MinMaxMetadata, MoveFinder, MoveSuggestion};
+use crate::hashing::Zobrist;
 use crate::iter_deep::eval_iter_deep;
 use crate::piece::{Color, Move, Square};
 
@@ -37,14 +38,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_matches();
 
     let fen: &String = matches.get_one("fen").unwrap();
-    let mut board = Board::from_fen(fen).unwrap();
+    // let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+    // let mut board = Board::from_fen(fen).unwrap();
 
-    // lichess::start_event_loop().await;
+    // board.apply_move(&Move::from_uci("a1b1", &board).unwrap());
+    // println!("{}", board.to_fen());
+
+    lichess::start_event_loop().await;
 
     // run_engine();
 
 
-    // compare_perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1".to_string(), 5).unwrap();
+    // compare_perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 5).unwrap();
 
 
 
@@ -65,10 +70,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    for n in 1..10 {
-        let start = Instant::now();
-        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    }
+    // for n in 1..10 {
+    //     let start = Instant::now();
+    //     println!("Hash {}", board.zobrist_key);
+    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    // }
 
     // for start_move in board.legal_moves() {
     //
@@ -134,7 +140,7 @@ fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{
             let uci = parts.next().unwrap();
             let count = parts.next().unwrap().trim();
             let count = u64::from_str(count).unwrap();
-            let uci_move = Move::from_uci(uci.to_string(), &board_clone);
+            let uci_move = Move::from_uci(uci, &board_clone);
             match uci_move {
                 Err(_) => panic!("Invalid move (we can't generate the move struct) {}", uci),
                 Ok(m) => (m, count)

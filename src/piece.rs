@@ -153,7 +153,7 @@ impl Move {
         }
     }
 
-    pub fn from_uci(uci: String, board: &Board) -> Result<Move, ()> {
+    pub fn from_uci(uci: &str, board: &Board) -> Result<Move, ()> {
         let from = Square::try_from(&uci[..2])?;
         let to = Square::try_from(&uci[2..4])?;
         let mut move_vect: Vec<Move> = vec![];

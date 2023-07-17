@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::builder::Str;
 use tokio_util::io::StreamReader;
 use futures_util::stream::TryStreamExt;
+use futures_util::task::Spawn;
 use itertools::Itertools;
 use reqwest::header::AUTHORIZATION;
 use reqwest::Response;
@@ -47,7 +48,8 @@ struct GameStartData {
     fen: String
 }
 
-pub async fn start_event_loop() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_event_loop() -> Result<(), Box<dyn Error + Send + Sync>> {
+    print!("Connecting to Lichess...");
     let client = reqwest::Client::new();
     let response = client
         .get("https://lichess.org/api/stream/event")
@@ -55,6 +57,7 @@ pub async fn start_event_loop() -> Result<(), Box<dyn std::error::Error + Send +
         .send()
         .await?
         .bytes_stream();
+    println!(" connected.");
 
 
     let reader = StreamReader::new(response.map_err(convert_err));
@@ -170,7 +173,7 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
                 if let Some(fen) = &fen_opt {
                     let mut board = Board::from_fen(fen.as_str()).unwrap();
                     for uci in state.moves.split(" ").filter(|m| m.len() >= 4) {
-                        let m = Move::from_uci(uci.to_string(), &board).unwrap();
+                        let m = Move::from_uci(uci, &board).unwrap();
                         board.apply_move(&m);
                     }
                     if let Some(color) = color_opt {
@@ -196,7 +199,7 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
                 if let Some(fen) = &fen_opt {
                     let mut board = Board::from_fen(fen.as_str()).unwrap();
                     for uci in state.moves.split(" ").filter(|m| m.len() >= 4) {
-                        let m = Move::from_uci(uci.to_string(), &board).unwrap();
+                        let m = Move::from_uci(uci, &board).unwrap();
                         board.apply_move(&m);
                     }
                     board_opt = Some(board);
