@@ -20,6 +20,8 @@ mod piece;
 mod evaluator;
 mod lichess;
 mod iter_deep;
+mod hashing;
+mod movegen;
 
 const TERMINAL: bool = true;
 const DEFAULT_DEPTH: u8 = 6;
@@ -37,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fen: &String = matches.get_one("fen").unwrap();
     let mut board = Board::from_fen(fen).unwrap();
 
-    lichess::start_event_loop().await;
+    // lichess::start_event_loop().await;
 
     // run_engine();
 
@@ -63,10 +65,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    // for n in 1..10 {
-    //     let start = Instant::now();
-    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    // }
+    for n in 1..10 {
+        let start = Instant::now();
+        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    }
 
     // for start_move in board.legal_moves() {
     //

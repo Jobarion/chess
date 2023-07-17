@@ -15,3 +15,4 @@ serde_json = "1.0"
 tokio-util = "0.6.3"
 futures-util = "0.3.28"
 serde = { version = "1.0.171", features = ["derive"] }
+const-random = "0.1.15"
