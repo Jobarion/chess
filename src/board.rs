@@ -2,6 +2,7 @@ pub mod board {
     use std::convert::{Into, TryFrom};
     use std::fmt::{Display, Error, Formatter, Write};
     use std::ops::{Index, IndexMut, Not};
+    use std::ptr::hash;
     use std::str::Split;
     use std::str::SplitWhitespace;
     use futures_util::stream::All;
@@ -12,7 +13,8 @@ pub mod board {
     use crate::bitboard::*;
     use crate::board::board::CastleState::{Allowed, Forbidden};
     use crate::evaluator::{PIECE_VALUE, PST};
-    use crate::hashing::Zobrist;
+    use crate::hashing;
+    use crate::hashing::{PerftData, TranspositionTable, Zobrist, ZobristHash};
     use crate::piece::*;
     use crate::piece::PieceType::*;
     use crate::piece::Color::*;
@@ -117,7 +119,7 @@ pub mod board {
         pub piece_bbs: [[BitBoard; 6]; 2],
         pub color_bbs: [BitBoard; 2],
         pub eval_info: EvalInfo,
-        pub zobrist_key: u64
+        pub zobrist_key: ZobristHash
     }
     //rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 
@@ -191,7 +193,6 @@ pub mod board {
                     BLACK => sqr.flip()
                 };
                 self.eval_info.psqt[piece.color] -= PST[self.eval_info.game_phase][piece.piece_type][correct_square];
-
                 Some(piece)
             } else {
                 None
@@ -380,49 +381,40 @@ pub mod board {
             }
         }
 
-        pub fn perft(&mut self, depth: u8) -> Perft {
-            let mut perft = Perft::new();
+        pub fn perft(&mut self, depth: u8) -> u64 {
+            let mut tt_table = TranspositionTable::new(32);
             if depth > 0 {
-                self._perft(&mut perft, depth);
+                self._perft(depth, &mut tt_table)
+            } else {
+                1
             }
-            else {
-                perft.nodes = 1
-            }
-            perft
         }
 
-        fn _perft(&mut self, mut perft: &mut Perft, depth: u8) {
+        fn _perft(&mut self, depth: u8, mut tt_table: &mut TranspositionTable<PerftData, 2>) -> u64 {
+            if let Some(hash_result) = tt_table.retrieve(self.zobrist_key).and_then(|r|r.get_nodes(depth)) {
+                return hash_result;
+            }
+            let mut perft = 0;
             for lmove in self.legal_moves().legal_moves {
                 //Don't descend into king captures
                 if let MoveAction::Capture(KING) = lmove.move_type {
                     continue;
                 }
-                // let old_castle_ops = (self.castling_options_white, self.castling_options_black).clone();
+
                 self.apply_move(&lmove);
                 if depth == 1 {
-                    match lmove.move_type {
-                        MoveAction::Capture(_) => perft.captures += 1,
-                        MoveAction::EnPassant => {
-                            perft.captures += 1;
-                            perft.en_passants += 1;
-                        },
-                        MoveAction::Promotion(_, None) => perft.promotions += 1,
-                        MoveAction::Promotion(_, Some(_)) => {
-                            perft.promotions += 1;
-                            perft.captures += 1;
-                        },
-                        MoveAction::Castle(_) => {
-                            perft.castles += 1;
-                        }
-                        _ => {}
-                    }
-                    perft.nodes += 1;
+                    perft += 1;
                 }
                 else {
-                    self._perft(&mut perft, depth - 1);
+                    perft += self._perft(depth - 1, &mut tt_table);
                 }
                 self.undo_move(&lmove);
             }
+            tt_table.store(PerftData {
+                nodes: perft,
+                depth
+            }, self.zobrist_key);
+            perft
         }
 
         pub fn to_fen(&self) -> String {

@@ -189,7 +189,7 @@ impl MinMaxEvaluator {
             MAX_EVAL
         };
         let mut minmax_suggestion = None;
-        let LegalMoveData { legal_moves, king_danger_mask, pin_mask } = board.legal_moves();
+        let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves();
         let mut legal_moves_scored = MinMaxEvaluator::score_moves(legal_moves, &board, meta);
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
 

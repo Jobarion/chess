@@ -11,9 +11,10 @@ use console::Term;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
 use crate::evaluator::{eval_position_direct, MinMaxEvaluator, MinMaxMetadata, MoveFinder, MoveSuggestion};
-use crate::hashing::Zobrist;
+use crate::hashing::{PerftData, Zobrist};
 use crate::iter_deep::eval_iter_deep;
 use crate::piece::{Color, Move, Square};
+use crate::piece::Color::{BLACK, WHITE};
 
 mod board;
 mod bitboard;
@@ -38,13 +39,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_matches();
 
     let fen: &String = matches.get_one("fen").unwrap();
-    // let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
-    // let mut board = Board::from_fen(fen).unwrap();
+    // let fen = "k7/8/8/8/8/8/8/K7 w - - 0 1";
+    let mut board = Board::from_fen(fen).unwrap();
 
-    // board.apply_move(&Move::from_uci("a1b1", &board).unwrap());
-    // println!("{}", board.to_fen());
-
-    lichess::start_event_loop().await;
+    // let mut tt = hashing::TranspositionTable::<PerftData, 2>::new(90);
+    // lichess::start_event_loop().await;
 
     // run_engine();
 
@@ -70,11 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    // for n in 1..10 {
-    //     let start = Instant::now();
-    //     println!("Hash {}", board.zobrist_key);
-    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    // }
+    for n in 0..10 {
+        let start = Instant::now();
+        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    }
 
     // for start_move in board.legal_moves() {
     //
@@ -154,7 +152,7 @@ fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{
                 board.apply_move(&pmove);
                 let perft = board.perft(depth - 1);
                 board.undo_move(&pmove);
-                (pmove, count, perft.nodes)
+                (pmove, count, perft)
             } else {
                 (pmove, count, 0)
             }
@@ -177,7 +175,7 @@ fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{
             if !stockfish_valid_moves.contains(&our_move) {
                 board.apply_move(&our_move);
                 let bad_move_perft = board.perft(depth - 1);
-                println!("Found move stockfish doesn't know. {}, stockfish 0, us {}", our_move.to_uci(), bad_move_perft.nodes);
+                println!("Found move stockfish doesn't know. {}, stockfish 0, us {}", our_move.to_uci(), bad_move_perft);
             }
         }
         Ok(())
