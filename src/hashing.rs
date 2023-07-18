@@ -157,19 +157,6 @@ impl IHashData for AlphaBetaData {
 
 impl AlphaBetaData {
 
-    // pub fn get_at_depth(&self, depth: u8, alpha: Evaluation, beta: Evaluation) -> Option<(Evaluation, Move)> {
-    //     if self.depth >= depth {
-    //         match self.node_type {
-    //             NodeType::Exact => Some((self.eval, self.best_move)),
-    //             NodeType::Alpha if self.eval <= alpha => Some((alpha, self.best_move)),
-    //             NodeType::Beta if self.eval >= beta => Some((beta, self.best_move)),
-    //             _ => None
-    //         }
-    //     } else {
-    //         None
-    //     }
-    // }
-
     pub fn create(depth: u8, node_type: NodeType, eval: Evaluation, best_move: Move) -> AlphaBetaData {
         AlphaBetaData {
             depth,
