@@ -1,22 +1,22 @@
-use std::cmp::{max, min};
+use std::cmp::{min};
 use std::error::Error;
 use std::io::ErrorKind;
 use std::time::{SystemTime, UNIX_EPOCH};
-use clap::builder::Str;
+
 use tokio_util::io::StreamReader;
 use futures_util::stream::TryStreamExt;
-use futures_util::task::Spawn;
+
 use reqwest::header::AUTHORIZATION;
 use reqwest::Response;
 use tokio::io::AsyncBufReadExt;
-use serde::{Serialize, Deserialize};
-use serde::ser::StdError;
-use tokio::spawn;
-use crate::{Board, Color, eval_iter_deep, MinMaxEvaluator, Move, MoveFinder, MoveSuggestion};
+use serde::{Deserialize};
+
+
+use crate::{Board, Color, eval_iter_deep, Move, MoveSuggestion};
 use crate::Color::{BLACK, WHITE};
-use crate::evaluator::MinMaxMetadata;
+
 use crate::lichess::BotEvent::{Challenge, GameStart};
-use crate::lichess::GameEvent::GameFull;
+
 
 const AUTHORIZATION_HEADER: &str = "Bearer lip_rs2nWprOVDbDtyyj4g2o";
 const BOT_ID: &str = "jobabot"; //We should fetch this
@@ -67,7 +67,7 @@ pub async fn start_event_loop() -> Result<(), Box<dyn Error + Send + Sync>> {
         let event: BotEvent = serde_json::from_str(line.as_str()).unwrap_or(BotEvent::KeepAlive);
         // println!("Event loop, event = {:?}", event);
         match event {
-            Challenge{challenge: ChallengeData{id, url, challenger}} => {
+            Challenge{challenge: ChallengeData{id, url: _, challenger}} => {
                 if challenger.id.as_str() == "puad" || challenger.id.as_str() == "jobarion" {
                     accept_challenge(id).await?;
                 } else {
@@ -75,7 +75,7 @@ pub async fn start_event_loop() -> Result<(), Box<dyn Error + Send + Sync>> {
                 }
                 ()
             },
-            GameStart{game: GameStartData{id, fen}} => {
+            GameStart{game: GameStartData{id, fen: _}} => {
                 println!("Game has started {}", id);
                 std::thread::spawn(|| game_loop(id));
                 // game_loop(id).await?;
@@ -250,7 +250,7 @@ async fn game_loop(id: String) -> Result<(), Box<dyn std::error::Error + Send + 
     Ok(())
 }
 
-fn calc_move_time(us_time: u64, them_time: u64, us_inc: u64, them_inc: u64) -> u64 {
+fn calc_move_time(us_time: u64, them_time: u64, us_inc: u64, _them_inc: u64) -> u64 {
     if us_time >= 1_000_000 {
         return 20 * 1000;
     }

@@ -1,7 +1,7 @@
-use crate::evaluator::{Evaluation, MoveSuggestion, PIECE_VALUE};
+use crate::evaluator::{Evaluation};
 use rand_chacha::ChaChaRng;
 use rand::{Rng, SeedableRng};
-use serde_json::to_string;
+
 use crate::board::board::CastleState;
 use crate::board::board::CastleState::Allowed;
 use crate::piece::{Color, Move, MoveAction, PieceType, Square};
@@ -80,7 +80,7 @@ impl Zobrist {
         self.pieces[color][piece_type][sqr]
     }
 
-    fn generate_zobrist_keys<const COUNT: usize>(mut rng: &mut ChaChaRng) -> [ZobristHash; COUNT] {
+    fn generate_zobrist_keys<const COUNT: usize>(rng: &mut ChaChaRng) -> [ZobristHash; COUNT] {
         [0; COUNT]
             .map(|_| rng.gen::<ZobristHash>())
     }
@@ -119,18 +119,20 @@ impl IHashData for PerftData {
     }
 }
 
-enum NodeType {
+#[derive(Copy, Clone)]
+pub enum NodeType {
     Alpha,
     Beta,
     Exact,
     None
 }
 
-struct AlphaBetaData {
-    depth: u8,
-    node_type: NodeType,
-    eval: Evaluation,
-    best_move: Move,
+#[derive(Copy, Clone)]
+pub struct AlphaBetaData {
+    pub depth: u8,
+    pub node_type: NodeType,
+    pub eval: Evaluation,
+    pub best_move: Move,
 }
 
 impl IHashData for AlphaBetaData {
@@ -155,20 +157,20 @@ impl IHashData for AlphaBetaData {
 
 impl AlphaBetaData {
 
-    fn get_at_depth(&self, depth: u8, alpha: Evaluation, beta: Evaluation) -> Option<(Evaluation, Move)> {
-        if self.depth >= depth {
-            match self.node_type {
-                NodeType::Exact => Some((self.eval, self.best_move)),
-                NodeType::Alpha if self.eval <= alpha => Some((alpha, self.best_move)),
-                NodeType::Beta if self.eval >= beta => Some((beta, self.best_move)),
-                _ => None
-            }
-        } else {
-            None
-        }
-    }
+    // pub fn get_at_depth(&self, depth: u8, alpha: Evaluation, beta: Evaluation) -> Option<(Evaluation, Move)> {
+    //     if self.depth >= depth {
+    //         match self.node_type {
+    //             NodeType::Exact => Some((self.eval, self.best_move)),
+    //             NodeType::Alpha if self.eval <= alpha => Some((alpha, self.best_move)),
+    //             NodeType::Beta if self.eval >= beta => Some((beta, self.best_move)),
+    //             _ => None
+    //         }
+    //     } else {
+    //         None
+    //     }
+    // }
 
-    fn create(&self, depth: u8, node_type: NodeType, eval: Evaluation, best_move: Move) -> AlphaBetaData {
+    pub fn create(depth: u8, node_type: NodeType, eval: Evaluation, best_move: Move) -> AlphaBetaData {
         AlphaBetaData {
             depth,
             node_type,

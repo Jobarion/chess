@@ -1,7 +1,7 @@
 
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::ops::{Index, IndexMut, Not, Range, RangeInclusive};
+use std::ops::{Index, IndexMut, Not, RangeInclusive};
 
 use crate::board::board::{Board, BoardIndex, FILE_SIZE};
 use crate::piece::Color::*;

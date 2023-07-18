@@ -1,18 +1,19 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use crate::{Board, MinMaxEvaluator, MoveFinder, MoveSuggestion};
+use crate::{Board, AlphaBetaSearch, MoveFinder, MoveSuggestion};
 use crate::evaluator::MinMaxMetadata;
+use crate::hashing::{AlphaBetaData, TranspositionTable};
 
-const MAX_DEPTH: usize = 100;
-const START_DEPTH: usize = 2;
+const MAX_DEPTH: u8 = 100;
+const START_DEPTH: u8 = 2;
 
 pub fn eval_iter_deep(mut board: &mut Board, end_time: u128) -> Option<MoveSuggestion> {
     let mut best_move: Option<MoveSuggestion> = None;
     let mut previous_elapsed = 0_u128;
-    for depth in 2..MAX_DEPTH {
+    let mut tt_table = TranspositionTable::<AlphaBetaData, 2>::new(32);
+    for depth in START_DEPTH..MAX_DEPTH {
         let start = Instant::now();
-        let evaluator = MinMaxEvaluator::new(depth);
-        let mut meta = MinMaxMetadata::new(end_time);
-        let move_at_depth = evaluator.find_move(&mut board, &mut meta);
+        let mut meta = MinMaxMetadata::new(end_time, &mut tt_table);
+        let move_at_depth = AlphaBetaSearch::find_move(&mut board, depth, &mut meta);
         if meta.should_terminate {
             println!("Terminated depth {} with result {:?}", depth, move_at_depth);
             // if let Some(old_best) = &best_move {

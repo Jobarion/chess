@@ -468,7 +468,7 @@ impl Board {
     }
 
     fn generate_king_danger_squares(&self) -> BitBoard {
-        let opp_mask = self.color_bbs[!self.active_player];
+        let _opp_mask = self.color_bbs[!self.active_player];
         let opp_c = !self.active_player;
         let pawn_attack_mask = match self.active_player {
             WHITE => PAWN_CAPTURE_MOVES_BLACK,
@@ -687,7 +687,7 @@ impl Board {
     pub fn create_moves(&self, from: Square, to: Square, moves: &mut Vec<Move>) {
         let from_piece = self.board[from].expect("From piece must exist");
         match self.board[to] {
-            Some(Piece{piece_type, color}) => match from_piece.piece_type {
+            Some(Piece{piece_type, color: _}) => match from_piece.piece_type {
                 PieceType::PAWN if (from_piece.color == WHITE && to.rank() == 7) || (from_piece.color == BLACK && to.rank() == 0) => {
                     moves.push(Move { from, to, move_type: MoveAction::Promotion(QUEEN, Some(piece_type)), previous_ep_square: self.en_passant_square });
                     moves.push(Move { from, to, move_type: MoveAction::Promotion(KNIGHT, Some(piece_type)), previous_ep_square: self.en_passant_square });

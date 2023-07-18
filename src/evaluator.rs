@@ -1,23 +1,24 @@
-use std::cmp::Ordering;
+use std::cmp::{max, min, Ordering};
 use std::fmt::{Debug, Display, Formatter};
-use std::future::poll_fn;
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Neg, Not, Shl, Shr, Sub, SubAssign};
-use std::process::Output;
+
+use std::ops::{Neg};
+
 use core::option::Option;
-use std::sync::{Arc, Mutex};
+
 use std::time::{SystemTime, UNIX_EPOCH};
-use itertools::Itertools;
-use crate::bitboard::BitBoard;
-use crate::board::board::{Board, GamePhase};
+use itertools::{Itertools};
+
+use crate::board::board::{Board};
 use crate::Color::*;
-use crate::evaluator::Evaluation::{Estimate, Mate, Stalemate};
+use crate::evaluator::Evaluation::{Estimate, Winning, Losing, Stalemate};
+use crate::hashing::{AlphaBetaData, NodeType, TranspositionTable};
 use crate::movegen::LegalMoveData;
-use crate::piece::{Color, Move, MoveAction, Piece, PieceType, Square};
-use crate::piece::MoveAction::Normal;
+use crate::piece::{Color, Move, MoveAction, PieceType};
+
 use crate::piece::PieceType::*;
 
-pub const MIN_EVAL: Evaluation = Mate(Color::BLACK, 0);
-pub const MAX_EVAL: Evaluation = Mate(Color::WHITE, 0);
+pub const MIN_EVAL: Evaluation = Losing(0);
+pub const MAX_EVAL: Evaluation = Winning(0);
 
 const PST_MG_PAWN: [i16; 64] = [0, 0, 0, 0, 0, 0, 0, 0, -35, -1, -20, -23, -15, 24, 38, -22, -26, -4, -4, -10, 3, 3, 33, -12, -27, -2, -5, 12, 17, 6, 10, -25, -14, 13, 6, 21, 23, 12, 17, -23, -6, 7, 26, 31, 65, 56, 25, -20, 98, 134, 61, 95, 68, 126, 34, -11, 0, 0, 0, 0, 0, 0, 0, 0];
 const PST_MG_KNIGHT: [i16; 64] = [-105, -21, -58, -33, -17, -28, -19, -23, -29, -53, -12, -3, -1, 18, -14, -19, -23, -9, 12, 10, 19, 17, 25, -16, -13, 4, 16, 13, 28, 19, 21, -8, -9, 17, 19, 53, 37, 69, 18, 22, -47, 60, 37, 65, 84, 129, 73, 44, -73, -41, 72, 36, 23, 62, 7, -17, -167, -89, -34, -49, 61, -97, -15, -107];
@@ -53,7 +54,8 @@ pub const PIECE_VALUE: [[u32; 6]; 2] = [PIECE_VALUE_MG, PIECE_VALUE_EG];
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Evaluation {
-    Mate(Color, u8),
+    Winning(u8),
+    Losing(u8),
     Estimate(f32),
     Stalemate
 }
@@ -73,14 +75,12 @@ impl PartialOrd<Self> for Evaluation {
 impl Ord for Evaluation {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Mate(Color::WHITE, _), Mate(Color::BLACK, _)) => Ordering::Greater,
-            (Mate(Color::BLACK, _), Mate(Color::WHITE, _)) => Ordering::Less,
-            (Mate(Color::WHITE, ml), Mate(Color::WHITE, mr)) => mr.cmp(&ml),
-            (Mate(Color::BLACK, ml), Mate(Color::BLACK, mr)) => ml.cmp(&mr),
-            (Mate(Color::WHITE, _), _) => Ordering::Greater,
-            (Mate(Color::BLACK, _), _) => Ordering::Less,
-            (_, Mate(Color::WHITE, _)) => Ordering::Less,
-            (_, Mate(Color::BLACK, _)) => Ordering::Greater,
+            (Winning(a), Winning(b)) => b.cmp(a),
+            (Winning(_), _) => Ordering::Greater,
+            (_, Winning(_)) => Ordering::Less,
+            (Losing(a), Losing(b)) => a.cmp(b),
+            (Losing(_), _) => Ordering::Less,
+            (_, Losing(_)) => Ordering::Greater,
             (Estimate(fl), Estimate(fr)) => fl.total_cmp(&fr),
             (Estimate(fl), _) => fl.total_cmp(&0.0),
             (_, Estimate(fr)) => 0.0_f32.total_cmp(fr),
@@ -95,7 +95,8 @@ impl Neg for Evaluation {
     fn neg(self) -> Self::Output {
         match self {
             Estimate(f) => Estimate(-f),
-            Mate(color, moves) => Mate(color.next(), moves),
+            Winning(moves) => Losing(moves),
+            Losing(moves) => Winning(moves),
             Stalemate => Stalemate,
         }
     }
@@ -105,8 +106,10 @@ impl Display for Evaluation {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Estimate(e) => write!(f, "{}", e),
-            Mate(color, 0) => write!(f, "Winner: {:?}", color),
-            Mate(color, moves) => write!(f, "M{} for {:?}", moves, color),
+            Winning(0) => write!(f, "Won"),
+            Winning(moves) => write!(f, "M{}", moves),
+            Losing(0) => write!(f, "Lost"),
+            Losing(moves) => write!(f, "M-{}", moves),
             Stalemate => write!(f, "{}", 0),
         }
     }
@@ -127,7 +130,7 @@ pub struct Stats {
     pub best_move: Option<MoveSuggestion>
 }
 
-pub struct MinMaxEvaluator {
+pub struct AlphaBetaSearch {
     max_depth: usize
 }
 
@@ -136,23 +139,25 @@ const KILLER_MOVE_SLOTS: usize = 2;
 type KillerMoves = [[Option<Move>; KILLER_MOVE_SLOTS]; MAX_DEPTH];
 type ScoredMove = (Move, u32);
 
-pub struct MinMaxMetadata {
+pub struct MinMaxMetadata<'a> {
     pub killer_moves: KillerMoves,
-    pub ply: usize,
+    pub tt_table: &'a mut TranspositionTable<AlphaBetaData, 2>,
+    pub ply: u8,
     pub node_count: u64,
     pub path: Vec<Move>,
     pub max_time: u128,
     pub should_terminate: bool,
 }
 
-impl MinMaxMetadata {
-    pub fn new(max_time: u128) -> MinMaxMetadata {
+impl MinMaxMetadata<'_> {
+    pub fn new(max_time: u128, tt_table: &mut TranspositionTable<AlphaBetaData, 2>) -> MinMaxMetadata<'_> {
         MinMaxMetadata {
             killer_moves: [[None; KILLER_MOVE_SLOTS]; MAX_DEPTH],
             ply: 0,
             node_count: 0,
             path: vec![],
             max_time,
+            tt_table,
             should_terminate: false,
         }
     }
@@ -167,99 +172,102 @@ impl MinMaxMetadata {
     }
 }
 
-impl MinMaxEvaluator {
+impl AlphaBetaSearch {
 
-    pub fn new(max_depth: usize) -> MinMaxEvaluator {
-        MinMaxEvaluator { max_depth }
+    pub fn find_move(board: &mut Board, depth: u8, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
+        let alpha = MIN_EVAL;
+        let beta = MAX_EVAL;
+        AlphaBetaSearch::eval_negamax(depth, board, alpha, beta, &mut meta)
     }
 
-    fn eval_minmax(&self, max_depth: usize, mut board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, max: bool, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
+    fn eval_negamax(max_depth: u8, board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
         meta.check_termination();
         if meta.should_terminate {
             return MoveSuggestion(MIN_EVAL, None)
+        }
+
+        if let Some(tt_entry) = meta.tt_table.retrieve(board.zobrist_key) {
+            if tt_entry.depth >= max_depth {
+                match tt_entry.node_type {
+                    NodeType::Exact => return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move)),
+                    NodeType::Alpha => {
+                        alpha = max(alpha, tt_entry.eval);
+                    },
+                    NodeType::Beta => {
+                        beta = min(alpha, tt_entry.eval);
+                    },
+                    _ => ()
+                }
+                if alpha >= beta {
+                    return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move));
+                }
+            }
         }
 
         meta.node_count += 1;
         if board.halfmove_clock >= 50 {
             return MoveSuggestion(Stalemate, None);
         }
-        let mut minmax_eval = if max {
-            MIN_EVAL
-        } else {
-            MAX_EVAL
-        };
-        let mut minmax_suggestion = None;
+
+        if max_depth == meta.ply {
+            let mut result = MoveSuggestion(eval_position_direct(board), None);
+            if board.active_player == BLACK {
+                result.0 = -result.0;
+            }
+            return result;
+        }
+
+        let mut max_eval = MIN_EVAL;
+        let mut max_suggestion = None;
+        let old_alpha = alpha;
         let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves();
-        let mut legal_moves_scored = MinMaxEvaluator::score_moves(legal_moves, &board, meta);
+        let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta);
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
 
         for (m, _) in legal_moves_scored {
             meta.path.push(m.clone());
-            let MoveSuggestion(eval, move_opt) = if max_depth == meta.ply {
-                board.apply_move(&m);
-                let eval = eval_position_direct(board);
-                board.undo_move(&m);
-                match eval {
-                    Estimate(val) => MoveSuggestion(Estimate(val), Some(m)),
-                    Stalemate => MoveSuggestion(Stalemate, None),
-                    Mate(c, 0) => MoveSuggestion(Mate(c, 0), None),
-                    Mate(c, val) => MoveSuggestion(Mate(c, val), Some(m))
-                }
-            } else {
-                meta.ply += 1;
-                board.apply_move(&m);
-                let eval = match self.eval_minmax(max_depth, board, alpha, beta, !max, &mut meta) {
-                    MoveSuggestion(Estimate(eval), _) => MoveSuggestion(Estimate(eval), Some(m)),
-                    MoveSuggestion(Mate(color, moves), _) => MoveSuggestion(Mate(color, moves + 1), Some(m)),
-                    MoveSuggestion(Stalemate, _) => MoveSuggestion(Stalemate, Some(m)),
-                };
-                board.undo_move(&m);
-                meta.ply -= 1;
-                eval
-            };
+            meta.ply += 1;
+            board.apply_move(&m);
+            let eval = -AlphaBetaSearch::eval_negamax(max_depth, board, -beta, -alpha, &mut meta).0;
+            board.undo_move(&m);
+            meta.ply -= 1;
             meta.path.pop();
-            if !max {
-                if eval < minmax_eval {
-                    minmax_eval = eval;
-                    minmax_suggestion = Some(MoveSuggestion(eval, move_opt));
+
+            if eval > max_eval {
+                max_suggestion = Some(MoveSuggestion(eval, Some(m)));
+                max_eval = eval;
+            }
+            alpha = max(alpha, max_eval);
+            if alpha > beta {
+                if m.move_type == MoveAction::Normal {
+                    AlphaBetaSearch::store_killer_move(m.clone(), &mut meta);
                 }
-                beta = beta.min(eval);
-                if minmax_eval <= alpha {
-                    if let Some(m) = &move_opt {
-                        if m.move_type == MoveAction::Normal {
-                            self.store_killer_move(m.clone(), &mut meta);
-                        }
-                    }
-                    break;
-                }
-            } else {
-                if eval > minmax_eval {
-                    minmax_eval = eval;
-                    minmax_suggestion = Some(MoveSuggestion(eval, move_opt));
-                }
-                alpha = alpha.max(eval);
-                if minmax_eval >= beta {
-                    if let Some(m) = &move_opt {
-                        if m.move_type == MoveAction::Normal {
-                            self.store_killer_move(m.clone(), &mut meta);
-                        }
-                    }
-                    break;
-                }
+                break;
             }
         }
 
-        minmax_suggestion.unwrap_or_else(|| {
+        if let Some(MoveSuggestion(eval, Some(best_move))) = max_suggestion {
+            let node_type = if eval <= old_alpha {
+                NodeType::Alpha
+            } else if eval >= beta {
+                NodeType::Beta
+            } else {
+                NodeType::Exact
+            };
+            meta.tt_table.store(AlphaBetaData::create(max_depth, node_type, eval, best_move.clone()), board.zobrist_key);
+        }
+
+        max_suggestion.unwrap_or_else(|| {
             if board.piece_bbs[board.active_player][KING] & king_danger_mask != 0 {
-                MoveSuggestion(Mate(board.active_player.next(), 0), None)
+                MoveSuggestion(Losing(meta.ply), None)
             } else {
                 MoveSuggestion(Stalemate, None)
             }
         })
     }
 
-    fn store_killer_move(&self, killer_move: Move, meta: &mut MinMaxMetadata) {
-        let killer_moves_level = &mut meta.killer_moves[meta.ply];
+    fn store_killer_move(killer_move: Move, meta: &mut MinMaxMetadata) {
+        let killer_moves_level = &mut meta.killer_moves[meta.ply as usize];
         if let Some(old_kmove) = &killer_moves_level[0] {
             if *old_kmove != killer_move {
                 for n in 0..(KILLER_MOVE_SLOTS - 1) {
@@ -281,14 +289,14 @@ impl MinMaxEvaluator {
             .map(|m| {
                 //max is 55 (assuming no king captures)
                 let mvv_lva_score = match m {
-                    Move{move_type: MoveAction::EnPassant, ..} => MinMaxEvaluator::mvv_lva_score(PieceType::PAWN, PieceType::PAWN),
-                    Move{move_type: MoveAction::Capture(captured), from, ..} => MinMaxEvaluator::mvv_lva_score(captured, board.board[from].unwrap().piece_type),
-                    Move{move_type: MoveAction::Promotion(_, Some(captured)), ..} => MinMaxEvaluator::mvv_lva_score(captured, PieceType::PAWN),
+                    Move{move_type: MoveAction::EnPassant, ..} => AlphaBetaSearch::mvv_lva_score(PieceType::PAWN, PieceType::PAWN),
+                    Move{move_type: MoveAction::Capture(captured), from, ..} => AlphaBetaSearch::mvv_lva_score(captured, board.board[from].unwrap().piece_type),
+                    Move{move_type: MoveAction::Promotion(_, Some(captured)), ..} => AlphaBetaSearch::mvv_lva_score(captured, PieceType::PAWN),
                     _ => 0
                 };
                 let killer_score = match m {
                     Move{move_type: MoveAction::Normal, ..} | Move{move_type: MoveAction::Promotion(_, None), ..} => {
-                        let killer_table = meta.killer_moves[meta.ply];
+                        let killer_table = meta.killer_moves[meta.ply as usize];
                         let mut score = 0_u32;
                         for n in 0..KILLER_MOVE_SLOTS {
                             if let Some(killer_move) = &killer_table[n] {
@@ -307,15 +315,15 @@ impl MinMaxEvaluator {
                 };
                 // let killer_score = 0;
                 // let mvv_lva_score = 0;
-                let score = mvv_lva_score | killer_score << MinMaxEvaluator::KILLER_OFFSET;
+                let score = mvv_lva_score | killer_score << AlphaBetaSearch::KILLER_OFFSET;
                 (m, score)
             })
             .collect_vec()
     }
 
     fn mvv_lva_score(victim: PieceType, attacker: PieceType) -> u32 {
-        let v_score = MinMaxEvaluator::mvv_lva_piece_score(victim) * 10;
-        let a_score = 6 - MinMaxEvaluator::mvv_lva_piece_score(attacker);
+        let v_score = AlphaBetaSearch::mvv_lva_piece_score(victim) * 10;
+        let a_score = 6 - AlphaBetaSearch::mvv_lva_piece_score(attacker);
         v_score + a_score
     }
 
@@ -328,17 +336,5 @@ impl MinMaxEvaluator {
             PieceType::QUEEN => 5,
             PieceType::KING => 6,
         }
-    }
-}
-
-impl MoveFinder for MinMaxEvaluator {
-    fn find_move(&self, board: &mut Board, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
-
-        let move_suggestion = match board.active_player {
-            Color::WHITE => self.eval_minmax(self.max_depth, board, Mate(Color::BLACK, 0), Mate(Color::WHITE, 0), true, &mut meta),
-            Color::BLACK => self.eval_minmax(self.max_depth, board, Mate(Color::BLACK, 0), Mate(Color::WHITE, 0), false, &mut meta),
-        };
-
-        move_suggestion
     }
 }

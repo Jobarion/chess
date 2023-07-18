@@ -7,7 +7,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use clap::arg;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
-use crate::evaluator::{MinMaxEvaluator, MoveFinder, MoveSuggestion};
+use crate::evaluator::{AlphaBetaSearch, MoveFinder, MoveSuggestion};
 use crate::iter_deep::eval_iter_deep;
 use crate::piece::{Color, Move, Square};
 
@@ -34,8 +34,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_matches();
 
     let fen: &String = matches.get_one("fen").unwrap();
-    // let fen = "k7/8/8/8/8/8/8/K7 w - - 0 1";
+    let fen = "rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1";
     let mut board = Board::from_fen(fen).unwrap();
+    iter_deep::eval_iter_deep(&mut board, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() + 20000);
     // println!("{}", board.zobrist_key);
 
     // let mut tt = hashing::TranspositionTable::<PerftData, 2>::new(90);
@@ -65,10 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // board.undo_move(&a);
     // println!("{}", board.to_fen());
 
-    for n in 0..10 {
-        let start = Instant::now();
-        println!("Perft {} {:?} in {}.{}s", n, board.perft(n, true), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    }
+    // for n in 0..10 {
+    //     let start = Instant::now();
+    //     println!("Perft {} {:?} in {}.{}s", n, board.perft(n, true), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    // }
 
     // for start_move in board.legal_moves() {
     //

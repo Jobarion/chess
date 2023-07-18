@@ -169,7 +169,7 @@ pub mod board {
         }
 
         pub fn set(&mut self, piece: Piece, sqr: Square) -> PieceOpt {
-            let mut previous = self.unset(sqr);
+            let previous = self.unset(sqr);
             self.board[sqr] = Some(piece);
             self.zobrist_key ^= self.zobrist_hash_data.piece(piece.color, piece.piece_type, sqr);
             self.piece_bbs[piece.color][piece.piece_type] |= sqr;
@@ -346,26 +346,26 @@ pub mod board {
             self.set_ep_square(piece_move.previous_ep_square);
 
             match piece_move {
-                Move{from, to, move_type: MoveAction::Promotion(_, None), previous_ep_square } => {
+                Move{from, to: _, move_type: MoveAction::Promotion(_, None), previous_ep_square: _ } => {
                     self.set(Piece{piece_type: PieceType::PAWN, color: self.active_player}, *from);
                 }
-                Move{from, to, move_type: MoveAction::Promotion(_, Some(captured_type)), previous_ep_square} => {
+                Move{from, to, move_type: MoveAction::Promotion(_, Some(captured_type)), previous_ep_square: _} => {
                     self.set(Piece{piece_type: PieceType::PAWN, color: self.active_player}, *from);
                     self.set(Piece{piece_type: *captured_type, color: !self.active_player}, *to);
                 }
-                Move{from, to, move_type: MoveAction::Capture(captured_type), previous_ep_square} => {
+                Move{from, to, move_type: MoveAction::Capture(captured_type), previous_ep_square: _} => {
                     self.set(moved_piece, *from);
                     self.set(Piece{piece_type: *captured_type, color: !self.active_player}, *to);
                 }
-                Move{from, to, move_type: MoveAction::EnPassant, previous_ep_square} => {
+                Move{from, to: _, move_type: MoveAction::EnPassant, previous_ep_square} => {
                     self.set(moved_piece, *from);
                     let previous_ep_square = previous_ep_square.expect("EnPassant undo requires previous en passant square");
                     self.set(Piece{piece_type: PieceType::PAWN, color: !self.active_player}, Square::new(previous_ep_square.file(), from.rank()));
                 }
-                Move { from, to, move_type: MoveAction::Normal, previous_ep_square: _ } => {
+                Move { from, to: _, move_type: MoveAction::Normal, previous_ep_square: _ } => {
                     self.set(moved_piece, *from);
                 }
-                Move { from, to, move_type: MoveAction::Castle(csquare), previous_ep_square: _ } => {
+                Move { from, to: _, move_type: MoveAction::Castle(csquare), previous_ep_square: _ } => {
                     self.set(moved_piece, *from);
                     let rook = self.unset(*csquare).unwrap();
                     self.set(rook, Square::new(if csquare.file() == 3 { 0 } else { 7 }, csquare.rank()));
@@ -474,7 +474,7 @@ pub mod board {
                 fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
             }
             let mut fen_parts: SplitWhitespace = fen.split_whitespace();
-            let mut positions: Split<char> = fen_parts.next()?.split('/');
+            let positions: Split<char> = fen_parts.next()?.split('/');
             let pieces = Board::parse_fen_board(positions)?;
             let active_player = Board::parse_active_player(fen_parts.next()?)?;
             let castling_options = Board::parse_castling_options(fen_parts.next()?)?;
