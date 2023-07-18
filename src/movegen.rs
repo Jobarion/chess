@@ -2,7 +2,7 @@ use std::arch::x86_64::{__m128i, __m256i, _mm256_and_si256, _mm256_or_si256, _mm
 use std::cmp::{max, min};
 use crate::{BitBoard, Board, Color, Move, Square};
 use crate::bitboard::*;
-use crate::board::board::{BoardIndex, CastleState};
+use crate::board::board::CastleState;
 use crate::Color::*;
 use crate::piece::{MoveAction, Piece, PieceType};
 use crate::piece::PieceType::*;
@@ -20,7 +20,7 @@ impl Board {
 
     pub(crate) fn legal_moves(&self) -> LegalMoveData {
         let king = self.piece_bbs[self.active_player][PieceType::KING];
-        let king_square = Square(king.0.trailing_zeros() as BoardIndex);
+        let king_square = Square(king.0.trailing_zeros() as u8);
 
         let king_danger_squares = self.generate_king_danger_squares();
 
@@ -92,7 +92,7 @@ impl Board {
             return LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask: BitBoard(0) };
         }
 
-        let attacker_square = Square(attackers.0.trailing_zeros() as BoardIndex);
+        let attacker_square = Square(attackers.0.trailing_zeros() as u8);
 
         // println!("Attackers");
         // self.print_highlighted(attackers);
@@ -168,8 +168,8 @@ impl Board {
     fn calculate_partial_pin_mask(piece_square: Square, king_square: Square, pin_mask: BitBoard) -> BitBoard {
         if pin_mask.is_set(piece_square) {
             match king_square.direction_between(&piece_square) {
-                (1, 0) | (-1, 0) => RANKS[piece_square.rank()],
-                (0, 1) | (0, -1) => FILES[piece_square.file()],
+                (1, 0) | (-1, 0) => RANKS[piece_square.rank() as usize],
+                (0, 1) | (0, -1) => FILES[piece_square.file() as usize],
                 (1, 1) | (-1, -1) => DIAGONALS_NW_SE[piece_square],
                 (1, -1) | (-1, 1) => DIAGONALS_NE_SW[piece_square],
                 _ => panic!()
@@ -187,8 +187,8 @@ impl Board {
         let mut file = from.file() as i8 + df ;
         let mut rank = from.rank() as i8 + dr;
         let mut ray_mask = BitBoard(0);
-        while file as BoardIndex != to.file() || rank as BoardIndex != to.rank() {
-            ray_mask = ray_mask.set(Square::new(file as BoardIndex, rank as BoardIndex));
+        while file as u8 != to.file() || rank as u8 != to.rank() {
+            ray_mask = ray_mask.set(Square::new(file as u8, rank as u8));
             file = file + df;
             rank = rank + dr;
         }
@@ -204,8 +204,8 @@ impl Board {
         let mut rank = from.rank() as i8;
         let mut ray_mask = BitBoard(0);
         loop {
-            ray_mask = ray_mask.set(Square::new(file as BoardIndex, rank as BoardIndex));
-            if file as BoardIndex == to.file() && rank as BoardIndex == to.rank() {
+            ray_mask = ray_mask.set(Square::new(file as u8, rank as u8));
+            if file as u8 == to.file() && rank as u8 == to.rank() {
                 break;
             }
             file = file + df;
@@ -233,7 +233,7 @@ impl Board {
         let mut king_moves = KING_MOVES[sqr] & !self.color_bbs[self.active_player];
         let no_castle_squares = king_danger_squares | (self.occupied() ^ self.piece_bbs[WHITE][KING] ^ self.piece_bbs[BLACK][KING]);
         if let (Some(c_square), _) = self.current_castle_options() {
-            let rook_passing_square = Square::new((c_square.file() as isize + sqr.direction_between(&c_square).0) as usize, c_square.rank());
+            let rook_passing_square = Square::new((c_square.file() as isize + sqr.direction_between(&c_square).0) as u8, c_square.rank());
             if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 && self.board[rook_passing_square] == None {
                 king_moves |= c_square;
             }
@@ -666,23 +666,23 @@ impl Board {
         let mut moves: Vec<Move> = vec!();
         while possible_targets != 0 {
             let move_id = possible_targets.0.trailing_zeros();
-            let to = Square(move_id as BoardIndex);
+            let to = Square(move_id as u8);
             possible_targets = possible_targets.toggle(to);
             self.create_moves(from, to, &mut moves);
         }
         moves
     }
 
-    fn moves_from_source_bitboard(&self, to: Square, mut possible_sources: BitBoard) -> Vec<Move> {
-        let mut moves: Vec<Move> = vec!();
-        while possible_sources != 0 {
-            let move_id = possible_sources.0.trailing_zeros();
-            let from = Square(move_id as BoardIndex);
-            possible_sources = possible_sources.toggle(from);
-            self.create_moves(from, to, &mut moves);
-        }
-        moves
-    }
+    // fn moves_from_source_bitboard(&self, to: Square, mut possible_sources: BitBoard) -> Vec<Move> {
+    //     let mut moves: Vec<Move> = vec!();
+    //     while possible_sources != 0 {
+    //         let move_id = possible_sources.0.trailing_zeros();
+    //         let from = Square(move_id as u8);
+    //         possible_sources = possible_sources.toggle(from);
+    //         self.create_moves(from, to, &mut moves);
+    //     }
+    //     moves
+    // }
 
     pub fn create_moves(&self, from: Square, to: Square, moves: &mut Vec<Move>) {
         let from_piece = self.board[from].expect("From piece must exist");
@@ -699,7 +699,7 @@ impl Board {
             None => match from_piece.piece_type {
                 PieceType::PAWN => match self.en_passant_square {
                     Some(ep_sqr) if ep_sqr == to => {
-                        let king_square = Square(self.piece_bbs[self.active_player][KING].0.trailing_zeros() as BoardIndex);
+                        let king_square = Square(self.piece_bbs[self.active_player][KING].0.trailing_zeros() as u8);
                         if king_square.rank() == from.rank() {
                             let attacker_dir = king_square.direction_between(&from);
                             let mut file = king_square.file() as isize + attacker_dir.0;
@@ -708,7 +708,7 @@ impl Board {
                                     file += attacker_dir.0;
                                     continue;
                                 }
-                                match self.board[Square::new(file as usize, king_square.rank())] {
+                                match self.board[Square::new(file as u8, king_square.rank())] {
                                     None => file += attacker_dir.0,
                                     Some(Piece{color, piece_type: ROOK}) | Some(Piece{color, piece_type: QUEEN}) if color == !self.active_player => return,
                                     _ => break

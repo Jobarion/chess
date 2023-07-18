@@ -1,20 +1,15 @@
 use crate::board::board::{Board};
 use std::convert::TryFrom;
-use std::{io, thread};
-use std::io::{Error, Write};
+use std::io::Write;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use clap::arg;
-use console::Term;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
-use crate::evaluator::{eval_position_direct, MinMaxEvaluator, MinMaxMetadata, MoveFinder, MoveSuggestion};
-use crate::hashing::{PerftData, Zobrist};
+use crate::evaluator::{MinMaxEvaluator, MoveFinder, MoveSuggestion};
 use crate::iter_deep::eval_iter_deep;
 use crate::piece::{Color, Move, Square};
-use crate::piece::Color::{BLACK, WHITE};
 
 mod board;
 mod bitboard;
@@ -41,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fen: &String = matches.get_one("fen").unwrap();
     // let fen = "k7/8/8/8/8/8/8/K7 w - - 0 1";
     let mut board = Board::from_fen(fen).unwrap();
+    // println!("{}", board.zobrist_key);
 
     // let mut tt = hashing::TranspositionTable::<PerftData, 2>::new(90);
     // lichess::start_event_loop().await;
@@ -48,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // run_engine();
 
 
-    // compare_perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 5).unwrap();
+    // compare_perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 6).unwrap();
 
 
 
@@ -71,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for n in 0..10 {
         let start = Instant::now();
-        println!("Perft {} {:?} in {}.{}s", n, board.perft(n), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+        println!("Perft {} {:?} in {}.{}s", n, board.perft(n, true), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
     }
 
     // for start_move in board.legal_moves() {
@@ -112,7 +108,7 @@ fn run_engine() {
     println!("{:?}", result);
 }
 
-fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{
+fn compare_perft(fen: &str, depth: u8) -> std::io::Result<()>{
     println!("Comparing '{}' at depth {}", fen, depth);
     let mut child = Command::new("./stockfish")
         .stdout(Stdio::piped())
@@ -150,7 +146,7 @@ fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{
             let move_known = our_valid_moves.contains(&pmove);
             if move_known {
                 board.apply_move(&pmove);
-                let perft = board.perft(depth - 1);
+                let perft = board.perft(depth - 1, false);
                 board.undo_move(&pmove);
                 (pmove, count, perft)
             } else {
@@ -174,7 +170,7 @@ fn compare_perft(fen: &str, depth: u8) -> io::Result<()>{
         for our_move in our_valid_moves {
             if !stockfish_valid_moves.contains(&our_move) {
                 board.apply_move(&our_move);
-                let bad_move_perft = board.perft(depth - 1);
+                let bad_move_perft = board.perft(depth - 1, false);
                 println!("Found move stockfish doesn't know. {}, stockfish 0, us {}", our_move.to_uci(), bad_move_perft);
             }
         }

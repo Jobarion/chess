@@ -113,8 +113,8 @@ impl Display for Evaluation {
 }
 
 pub fn eval_position_direct(board: &Board) -> Evaluation {
-    let mut material_eval: i32 = board.eval_info.material[WHITE] as i32 - board.eval_info.material[BLACK] as i32;
-    let mut pst_eval: i16 = board.eval_info.psqt[WHITE] - board.eval_info.psqt[BLACK];
+    let material_eval: i32 = board.eval_info.material[WHITE] as i32 - board.eval_info.material[BLACK] as i32;
+    let pst_eval: i16 = board.eval_info.psqt[WHITE] - board.eval_info.psqt[BLACK];
 
     return Estimate((material_eval + pst_eval as i32) as f32)
 }

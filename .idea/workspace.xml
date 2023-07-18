@@ -14,10 +14,17 @@
   <component name="ChangeListManager">
     <list default="true" id="2d27978f-9227-49ac-9748-a32179baf471" name="Default Changelist" comment="Bitboards in array">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/bitboard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/bitboard.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/board.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/board.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/evaluator.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/evaluator.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/hashing.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/hashing.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lichess.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lichess.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/movegen.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/movegen.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/piece.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/piece.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stockfish.exe" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -158,6 +165,7 @@
     "WebServerToolWindowFactoryState": "false",
     "cf.first.check.clang-format": "false",
     "cidr.known.project.marker": "true",
+    "last_opened_file_path": "/home/joba/Documents/Dev/Personal/rustic",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -337,6 +345,7 @@
       <workItem from="1689237339624" duration="4351000" />
       <workItem from="1689257581397" duration="22291000" />
       <workItem from="1689592641135" duration="4280000" />
+      <workItem from="1689663627525" duration="17627000" />
     </task>
     <task id="LOCAL-00001" summary="Working bitboard movegen">
       <created>1688407043358</created>

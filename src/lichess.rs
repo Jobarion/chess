@@ -6,7 +6,6 @@ use clap::builder::Str;
 use tokio_util::io::StreamReader;
 use futures_util::stream::TryStreamExt;
 use futures_util::task::Spawn;
-use itertools::Itertools;
 use reqwest::header::AUTHORIZATION;
 use reqwest::Response;
 use tokio::io::AsyncBufReadExt;

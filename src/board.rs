@@ -1,27 +1,20 @@
 pub mod board {
     use std::convert::{Into, TryFrom};
     use std::fmt::{Display, Error, Formatter, Write};
-    use std::ops::{Index, IndexMut, Not};
-    use std::ptr::hash;
     use std::str::Split;
     use std::str::SplitWhitespace;
-    use futures_util::stream::All;
-
-    use itertools::Itertools;
-    use tokio::time::Instant;
 
     use crate::bitboard::*;
     use crate::board::board::CastleState::{Allowed, Forbidden};
     use crate::evaluator::{PIECE_VALUE, PST};
-    use crate::hashing;
     use crate::hashing::{PerftData, TranspositionTable, Zobrist, ZobristHash};
     use crate::piece::*;
     use crate::piece::PieceType::*;
     use crate::piece::Color::*;
 
     pub(crate) type BoardIndex = usize;
-    pub const RANK_SIZE: BoardIndex = 8;
-    pub const FILE_SIZE: BoardIndex = 8;
+    pub const RANK_SIZE: u8 = 8;
+    pub const FILE_SIZE: u8 = 8;
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     pub enum CastleState {
@@ -67,7 +60,7 @@ pub mod board {
             for rank in (0..RANK_SIZE).rev() {
                 for file in 0..FILE_SIZE {
                     let sqr = Square::new(file, rank);
-                    let _ = match self.board[sqr.0] {
+                    let _ = match self.board[sqr.0 as usize] {
                         Some(piece) => write!(f, "{}", piece),
                         None => write!(f, ".")
                     };
@@ -84,7 +77,7 @@ pub mod board {
         ENDGAME = 1,
     }
 
-    impl<T, const N: usize> Index<GamePhase> for [T; N] {
+    impl<T, const N: usize> std::ops::Index<GamePhase> for [T; N] {
         type Output = T;
 
         fn index(&self, index: GamePhase) -> &Self::Output {
@@ -92,7 +85,7 @@ pub mod board {
         }
     }
 
-    impl<T, const N: usize> IndexMut<GamePhase> for [T; N] {
+    impl<T, const N: usize> std::ops::IndexMut<GamePhase> for [T; N] {
 
         fn index_mut(&mut self, index: GamePhase) -> &mut Self::Output {
             &mut self[index as usize]
@@ -119,7 +112,8 @@ pub mod board {
         pub piece_bbs: [[BitBoard; 6]; 2],
         pub color_bbs: [BitBoard; 2],
         pub eval_info: EvalInfo,
-        pub zobrist_key: ZobristHash
+        pub zobrist_key: ZobristHash,
+        pub zobrist_hash_data: Zobrist,
     }
     //rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 
@@ -128,10 +122,10 @@ pub mod board {
         fn new(piece_table: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize], active_player: Color, castling_options_white: (CastleState, CastleState), castling_options_black: (CastleState, CastleState), en_passant_square: Option<Square>, halfmove_clock: u32, fullmove: u32) -> Board {
             let mut board = Board {
                 board: [None; 64],
-                active_player: WHITE,
-                castling_options_white: (Allowed, Allowed),
-                castling_options_black: (Allowed, Allowed),
-                en_passant_square: None,
+                active_player,
+                castling_options_white,
+                castling_options_black,
+                en_passant_square,
                 halfmove_clock,
                 fullmove,
                 zobrist_key: 0,
@@ -141,7 +135,8 @@ pub mod board {
                     material: [0; 2],
                     psqt: [0; 2],
                     game_phase: GamePhase::MIDGAME
-                }
+                },
+                zobrist_hash_data: Zobrist::new(),
             };
 
             for n in 0..64 {
@@ -150,12 +145,22 @@ pub mod board {
                     board.set(p, Square(n));
                 }
             }
-            if active_player != WHITE {
-                board.change_active();
-            }
-            board.set_castle_options(castling_options_white, castling_options_black);
-            board.set_ep_square(en_passant_square);
+            board.zobrist_key = board.rehash();
             board
+        }
+
+        pub fn rehash(&self) -> ZobristHash {
+            let mut hash: ZobristHash = 0;
+            for n in 0..64 {
+                let sqr = Square(n);
+                if let Some(Piece{color, piece_type}) = self.board[sqr] {
+                    hash ^= self.zobrist_hash_data.piece(color, piece_type, sqr);
+                }
+            }
+            hash ^= self.zobrist_hash_data.castling(self.castling_options_white, self.castling_options_black);
+            hash ^= self.zobrist_hash_data.side(self.active_player);
+            hash ^= self.zobrist_hash_data.ep(self.en_passant_square);
+            hash
         }
 
 
@@ -166,7 +171,7 @@ pub mod board {
         pub fn set(&mut self, piece: Piece, sqr: Square) -> PieceOpt {
             let mut previous = self.unset(sqr);
             self.board[sqr] = Some(piece);
-            self.zobrist_key ^= Zobrist::PIECES[piece.color][piece.piece_type][sqr];
+            self.zobrist_key ^= self.zobrist_hash_data.piece(piece.color, piece.piece_type, sqr);
             self.piece_bbs[piece.color][piece.piece_type] |= sqr;
             self.color_bbs[piece.color] |= sqr;
 
@@ -182,7 +187,7 @@ pub mod board {
 
         pub fn unset(&mut self, sqr: Square) -> PieceOpt {
             if let Some(piece) = self.board[sqr] {
-                self.zobrist_key ^= Zobrist::PIECES[piece.color][piece.piece_type][sqr];
+                self.zobrist_key ^= self.zobrist_hash_data.piece(piece.color, piece.piece_type, sqr);
                 let anti_mask = BitBoard(!(1 << sqr.0));
                 self.board[sqr] = None;
                 self.piece_bbs[piece.color][piece.piece_type] &= anti_mask;
@@ -200,35 +205,22 @@ pub mod board {
         }
 
         pub fn change_active(&mut self) {
-            self.zobrist_key ^= Zobrist::SIDE;
+            self.zobrist_key ^= self.zobrist_hash_data.side(self.active_player);
             self.active_player = !self.active_player;
+            self.zobrist_key ^= self.zobrist_hash_data.side(self.active_player);
         }
 
         fn set_ep_square(&mut self, ep: Option<Square>) {
-            if let Some(old) = self.en_passant_square {
-                self.zobrist_key ^= Zobrist::EP_RANK[old.rank()];
-            }
+            self.zobrist_key ^= self.zobrist_hash_data.ep(self.en_passant_square);
             self.en_passant_square = ep;
-            if let Some(old) = self.en_passant_square {
-                self.zobrist_key ^= Zobrist::EP_RANK[old.rank()];
-            }
+            self.zobrist_key ^= self.zobrist_hash_data.ep(self.en_passant_square);
         }
 
         fn set_castle_options(&mut self, white: (CastleState, CastleState), black: (CastleState, CastleState)) {
-            if self.castling_options_white.0 != white.0 {
-                self.zobrist_key ^= Zobrist::CASTLING[0];
-            }
-            if self.castling_options_white.1 != white.1 {
-                self.zobrist_key ^= Zobrist::CASTLING[1];
-            }
-            if self.castling_options_black.0 != black.0 {
-                self.zobrist_key ^= Zobrist::CASTLING[2];
-            }
-            if self.castling_options_black.1 != black.1 {
-                self.zobrist_key ^= Zobrist::CASTLING[3];
-            }
+            self.zobrist_key ^= self.zobrist_hash_data.castling(self.castling_options_white, self.castling_options_black);
             self.castling_options_white = white;
             self.castling_options_black = black;
+            self.zobrist_key ^= self.zobrist_hash_data.castling(self.castling_options_white, self.castling_options_black);
         }
 
         pub fn occupied(&self) -> BitBoard {
@@ -381,8 +373,12 @@ pub mod board {
             }
         }
 
-        pub fn perft(&mut self, depth: u8) -> u64 {
-            let mut tt_table = TranspositionTable::new(32);
+        pub fn perft(&mut self, depth: u8, hashing: bool) -> u64 {
+            let mut tt_table = if hashing {
+                TranspositionTable::new(32)
+            } else {
+                TranspositionTable::new(0)
+            };
             if depth > 0 {
                 self._perft(depth, &mut tt_table)
             } else {
@@ -400,7 +396,6 @@ pub mod board {
                 if let MoveAction::Capture(KING) = lmove.move_type {
                     continue;
                 }
-
                 self.apply_move(&lmove);
                 if depth == 1 {
                     perft += 1;
@@ -560,12 +555,12 @@ pub mod board {
             let mut pieces: [PieceOpt; 64] = [None; 64];
             for line_index in 0..8 {
                 let mut line = positions.next()?.chars();
-                let mut column_index: usize = 0;
+                let mut column_index: u8 = 0;
                 while column_index < 8 {
                     let piece = line.next()?;
                     match piece.to_digit(10) {
                         Some(n @ 1..=8) => {
-                            column_index += n as usize;
+                            column_index += n as u8;
                             continue;
                         }
                         Some(_) => return None,

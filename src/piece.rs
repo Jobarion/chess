@@ -8,7 +8,7 @@ use crate::piece::Color::*;
 use crate::piece::PieceType::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Square(pub BoardIndex);
+pub struct Square(pub u8);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MoveAction {
@@ -28,7 +28,7 @@ pub struct Move {
 }
 
 impl Square {
-    pub(crate) const fn new(file: BoardIndex, rank: BoardIndex) -> Square {
+    pub(crate) const fn new(file: u8, rank: u8) -> Square {
         Square(rank * 8 + file)
     }
 
@@ -36,11 +36,11 @@ impl Square {
         Square(self.0 ^ 56)
     }
 
-    pub fn file(&self) -> BoardIndex {
+    pub fn file(&self) -> u8 {
         self.0 % 8
     }
 
-    pub fn rank(&self) -> BoardIndex {
+    pub fn rank(&self) -> u8 {
         self.0 / 8
     }
 
@@ -55,14 +55,14 @@ impl<T, const N: usize> Index<Square> for [T; N] {
     type Output = T;
 
     fn index(&self, index: Square) -> &Self::Output {
-        &self[index.0]
+        &self[index.0 as usize]
     }
 }
 
 impl<T, const N: usize> IndexMut<Square> for [T; N] {
 
     fn index_mut(&mut self, index: Square) -> &mut Self::Output {
-        &mut self[index.0]
+        &mut self[index.0 as usize]
     }
 }
 
@@ -230,8 +230,8 @@ impl TryFrom<&str> for Square {
         let rank_id = match index {
             Some(f) => f - 1,
             None => return Err(())
-        } as BoardIndex;
-        let file_id = (file as BoardIndex) - ('a' as BoardIndex);
+        } as u8;
+        let file_id = ((file as BoardIndex) - ('a' as BoardIndex)) as u8;
         if file_id >= FILE_SIZE {
             return Err(());
         }
