@@ -6,16 +6,18 @@ use crate::hashing::{AlphaBetaData, TranspositionTable};
 const MAX_DEPTH: u8 = 100;
 const START_DEPTH: u8 = 2;
 
-pub fn eval_iter_deep(mut board: &mut Board, end_time: u128) -> Option<MoveSuggestion> {
+pub fn eval_iter_deep(mut board: &mut Board, end_time: u128, hash_size: usize, conserve_time: bool, quiet: bool) -> Option<MoveSuggestion> {
     let mut best_move: Option<MoveSuggestion> = None;
     let mut previous_elapsed = 0_u128;
-    let mut tt_table = TranspositionTable::<AlphaBetaData, 2>::new(32);
+    let mut tt_table = TranspositionTable::<AlphaBetaData, 2>::new(hash_size);
     for depth in START_DEPTH..MAX_DEPTH {
         let start = Instant::now();
         let mut meta = MinMaxMetadata::new(end_time, &mut tt_table);
         let move_at_depth = AlphaBetaSearch::find_move(&mut board, depth, &mut meta);
         if meta.should_terminate {
-            println!("Terminated depth {} with result {:?}", depth, move_at_depth);
+            if !quiet {
+                println!("Terminated depth {}", depth);
+            }
             // if let Some(old_best) = &best_move {
             //     if move_at_depth.0 > old_best.0 {
             //         best_move = Some(move_at_depth);
@@ -23,7 +25,9 @@ pub fn eval_iter_deep(mut board: &mut Board, end_time: u128) -> Option<MoveSugge
             // }
             break;
         } else {
-            println!("Completed depth {} with result {:?}", depth, move_at_depth);
+            if !quiet {
+                println!("Completed depth {} with result {:?}", depth, move_at_depth);
+            }
             best_move = Some(move_at_depth);
         }
         let elapsed_time = start.elapsed().as_millis();
@@ -38,9 +42,13 @@ pub fn eval_iter_deep(mut board: &mut Board, end_time: u128) -> Option<MoveSugge
             }
             let time_left = end_time - current_time;
             previous_elapsed = elapsed_time;
-            println!("Time left: {}. Expected for next iteration: {}", time_left, expected_duration_next);
-            if current_time > end_time || expected_duration_next / 2 > time_left {
-                println!("Terminating early");
+            if !quiet {
+                println!("Time left: {}. Expected for next iteration: {}", time_left, expected_duration_next);
+            }
+            if conserve_time && (current_time > end_time || expected_duration_next / 2 > time_left) {
+                if !quiet {
+                    println!("Terminating early");
+                }
                 break;
             }
         }

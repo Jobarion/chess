@@ -373,12 +373,8 @@ pub mod board {
             }
         }
 
-        pub fn perft(&mut self, depth: u8, hashing: bool) -> u64 {
-            let mut tt_table = if hashing {
-                TranspositionTable::new(32)
-            } else {
-                TranspositionTable::new(0)
-            };
+        pub fn perft(&mut self, depth: u8, hash_size: usize) -> u64 {
+            let mut tt_table = TranspositionTable::new(hash_size);
             if depth > 0 {
                 self._perft(depth, &mut tt_table)
             } else {

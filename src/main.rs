@@ -1,14 +1,17 @@
 use crate::board::board::{Board};
 use std::convert::TryFrom;
+use std::error::Error;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use clap::arg;
+use clap::{arg, command, value_parser};
+use clap::error::ContextKind::PriorArg;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
 use crate::evaluator::{AlphaBetaSearch, MoveFinder, MoveSuggestion};
 use crate::iter_deep::eval_iter_deep;
+use crate::lichess::LichessBot;
 use crate::piece::{Color, Move, Square};
 
 mod board;
@@ -24,19 +27,56 @@ const TERMINAL: bool = true;
 const DEFAULT_DEPTH: u8 = 6;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let matches = clap::Command::new("Chess")
+async fn main() {
+    let matches = command!("Chess")
         .version("1.0")
         .author("Jonas B. <jonas+chess@joba.me>")
-        .arg(arg!(--fen <FEN> "FEN string").default_value("startpos"))
-        .arg(arg!(--depth <DEPTH> "Evaluation depth").default_value("6"))
-        .arg(arg!(--uci "UCI output").default_value("false"))
+        .subcommand_required(true)
+        .subcommand(command!("eval")
+            .arg(arg!(--fen <FEN> "FEN string").default_value("startpos"))
+            .arg(arg!(--time <SECONDS> "Evaluation time seconds").value_parser(value_parser!(u32)).default_value("10"))
+            .arg(arg!(--uci "UCI output").value_parser(value_parser!(bool)).default_value("false"))
+            .arg(arg!(--hash <HASH_SIZE> "Hash table size in MB").value_parser(value_parser!(usize)).default_value("32"))
+        )
+        .subcommand(command!("lichess")
+            .arg(arg!(--token <TOKEN> "Authorization token").required(true))
+            .arg(arg!(--challengers <PLAYERS> "Whitelisted players").default_values(vec!["jobarion"]))
+            .arg(arg!(--hash <HASH_SIZE> "Hash table size in MB").value_parser(value_parser!(usize)).default_value("32"))
+        )
+        .subcommand(command!("perft")
+            .arg(arg!(--fen <FEN> "FEN string").default_value("startpos"))
+            .arg(arg!(--depth <DEPTH> "Perft depth").value_parser(value_parser!(u8)).required(true))
+            .arg(arg!(--hash <HASH_SIZE> "Hash table size in MB").value_parser(value_parser!(usize)).default_value("0"))
+        )
         .get_matches();
 
-    let fen: &String = matches.get_one("fen").unwrap();
-    let fen = "rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1";
-    let mut board = Board::from_fen(fen).unwrap();
-    iter_deep::eval_iter_deep(&mut board, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() + 20000);
+    match matches.subcommand() {
+        Some(("eval", sub_matches)) => {
+            let fen = sub_matches.get_one::<String>("fen").unwrap();
+            let time = sub_matches.get_one::<u32>("time").unwrap();
+            let uci_only = sub_matches.get_flag("uci");
+            let hash_size = sub_matches.get_one::<usize>("hash").unwrap();
+            run_eval(fen.as_str(), *time, *hash_size, uci_only);
+        },
+        Some(("perft", sub_matches)) => {
+            let fen = sub_matches.get_one::<String>("fen").unwrap();
+            let depth = sub_matches.get_one::<u8>("depth").unwrap();
+            let hash_size = sub_matches.get_one::<usize>("hash").unwrap();
+            run_perft(fen.as_str(), *depth, *hash_size);
+        },
+        Some(("lichess", sub_matches)) => {
+            let token = sub_matches.get_one::<String>("token").unwrap();
+            let players: Vec<String> = sub_matches.get_many("challengers").unwrap().cloned().collect_vec();
+            let hash_size = sub_matches.get_one::<usize>("hash").unwrap();
+            run_lichess(token.clone(), players, *hash_size).await.unwrap();
+        },
+        _ => unreachable!("Match is exhaustive")
+    }
+
+    // let fen: &String = matches.get_one("fen").unwrap();
+    // let fen = "rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1";
+    // let mut board = Board::from_fen(fen).unwrap();
+    // iter_deep::eval_iter_deep(&mut board, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() + 20000);
     // println!("{}", board.zobrist_key);
 
     // let mut tt = hashing::TranspositionTable::<PerftData, 2>::new(90);
@@ -92,21 +132,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     // println!("{}", board.to_fen());
     //     board.undo_move(&piece_move);
     // }
-    Ok(())
 }
 
-fn run_engine() {
-    let mut board = Board::from_fen("6k1/3qrpp1/pp5p/1r5n/8/1P3PP1/PQ4BP/2R3K1 w - - 0 1").unwrap();
+fn run_eval(fen: &str, time_seconds: u32, hash_size: usize, uci_only: bool) {
+    let mut board = Board::from_fen(fen).unwrap();
+    let end_time_millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() + time_seconds as u128 * 1000;
+    let result = iter_deep::eval_iter_deep(&mut board, end_time_millis, hash_size, false, uci_only);
+    if let Some(MoveSuggestion(eval, Some(best_move))) = result {
+        if uci_only {
+            println!("{}", best_move.to_uci());
+        }
+        else {
+            println!("{} ({})", best_move.to_uci(), eval);
+        }
+    }
+}
 
-    // for n in 1..10 {
-    //     let evaluator = MinMaxEvaluator::new(n);
-    //     let start = Instant::now();
-    //     let eval = evaluator.find_move(&mut board, &mut MinMaxMetadata::new(0));
-    //     println!("eval depth {} {} in {}.{}s", n, eval.0, start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
-    // }
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
-    let result = eval_iter_deep(&mut board, now + 10*1000);
-    println!("{:?}", result);
+fn run_perft(fen: &str, depth: u8, hash_size: usize) {
+    let mut board = Board::from_fen(fen).unwrap();
+    println!("{}", board.perft(depth, hash_size));
+}
+
+async fn run_lichess(token: String, whitelist: Vec<String>, hash_size: usize) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut bot = LichessBot::new(token, whitelist, hash_size);
+    bot.start_event_loop().await
 }
 
 fn compare_perft(fen: &str, depth: u8) -> std::io::Result<()>{
@@ -147,7 +196,7 @@ fn compare_perft(fen: &str, depth: u8) -> std::io::Result<()>{
             let move_known = our_valid_moves.contains(&pmove);
             if move_known {
                 board.apply_move(&pmove);
-                let perft = board.perft(depth - 1, false);
+                let perft = board.perft(depth - 1, 0);
                 board.undo_move(&pmove);
                 (pmove, count, perft)
             } else {
@@ -171,7 +220,7 @@ fn compare_perft(fen: &str, depth: u8) -> std::io::Result<()>{
         for our_move in our_valid_moves {
             if !stockfish_valid_moves.contains(&our_move) {
                 board.apply_move(&our_move);
-                let bad_move_perft = board.perft(depth - 1, false);
+                let bad_move_perft = board.perft(depth - 1, 0);
                 println!("Found move stockfish doesn't know. {}, stockfish 0, us {}", our_move.to_uci(), bad_move_perft);
             }
         }
