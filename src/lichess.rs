@@ -231,7 +231,7 @@ impl LichessBot {
                         let max_time = LichessBot::calc_move_time(us_time, them_time, us_inc, them_inc);
                         let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
                         let end_time = time + max_time as u128;
-                        if let Some(MoveSuggestion(eval, Some(pmove))) = eval_iter_deep(&mut board, end_time, 32, true, false) {
+                        if let Some(MoveSuggestion(eval, Some(pmove))) = eval_iter_deep(&mut board, end_time, self.hash_size, true, false) {
                             println!("Best move '{}', eval: '{}'", pmove, eval);
                             self.make_move(id.clone(), pmove.to_uci()).await?;
                         } else {
