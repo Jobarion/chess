@@ -4,6 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Neg};
 
 use core::option::Option;
+use std::env::set_current_dir;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use itertools::{Itertools};
@@ -12,10 +13,12 @@ use crate::board::board::{Board};
 use crate::Color::*;
 use crate::evaluator::Evaluation::{Estimate, Winning, Losing, Stalemate};
 use crate::hashing::{AlphaBetaData, NodeType, TranspositionTable};
-use crate::movegen::LegalMoveData;
+use crate::hashing::NodeType::Alpha;
+use crate::movegen::{LegalMoveData, MoveType};
 use crate::piece::{Color, Move, MoveAction, PieceType};
 
 use crate::piece::PieceType::*;
+use crate::run_eval;
 
 pub const MIN_EVAL: Evaluation = Losing(0);
 pub const MAX_EVAL: Evaluation = Winning(0);
@@ -48,6 +51,7 @@ pub const PST: [[[i16; 64]; 6]; 2] = [
 
 const PIECE_VALUE_MG: [u32; 6] = [0, 1025, 477, 365, 337, 82];
 const PIECE_VALUE_EG: [u32; 6] = [0, 936, 512, 297, 281, 94];
+// const PIECE_VALUE_NAIVE: [u32; 6] = [0, 9, 6, 3, 3, 1];
 
 pub const PIECE_VALUE: [[u32; 6]; 2] = [PIECE_VALUE_MG, PIECE_VALUE_EG];
 
@@ -119,7 +123,13 @@ pub fn eval_position_direct(board: &Board) -> Evaluation {
     let material_eval: i32 = board.eval_info.material[WHITE] as i32 - board.eval_info.material[BLACK] as i32;
     let pst_eval: i16 = board.eval_info.psqt[WHITE] - board.eval_info.psqt[BLACK];
 
-    return Estimate((material_eval + pst_eval as i32) as f32)
+    let mut eval = (material_eval + pst_eval as i32) as f32;
+    // let mut eval = material_eval as f32;
+    if board.active_player == BLACK {
+        eval = -eval;
+    }
+    Estimate(eval)
+
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -210,34 +220,32 @@ impl AlphaBetaSearch {
         }
 
         if max_depth == meta.ply {
-            let mut result = MoveSuggestion(eval_position_direct(board), None);
-            if board.active_player == BLACK {
-                result.0 = -result.0;
-            }
-            return result;
+            return AlphaBetaSearch::eval_quiescence(board, alpha, beta, &mut meta);
         }
 
         let mut max_eval = MIN_EVAL;
         let mut max_suggestion = None;
         let old_alpha = alpha;
-        let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves();
+        let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves(MoveType::All);
         let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta);
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
 
         for (m, _) in legal_moves_scored {
-            meta.path.push(m.clone());
+            // meta.path.push(m);
             meta.ply += 1;
             board.apply_move(&m);
             let eval = -AlphaBetaSearch::eval_negamax(max_depth, board, -beta, -alpha, &mut meta).0;
             board.undo_move(&m);
             meta.ply -= 1;
-            meta.path.pop();
+            // meta.path.pop();
 
             if eval > max_eval {
                 max_suggestion = Some(MoveSuggestion(eval, Some(m)));
                 max_eval = eval;
             }
-            alpha = max(alpha, max_eval);
+            if max_eval > alpha {
+                alpha = max_eval;
+            }
             if alpha > beta {
                 if m.move_type == MoveAction::Normal {
                     AlphaBetaSearch::store_killer_move(m.clone(), &mut meta);
@@ -263,6 +271,56 @@ impl AlphaBetaSearch {
             } else {
                 MoveSuggestion(Stalemate, None)
             }
+        })
+    }
+
+    fn eval_quiescence(board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
+        meta.check_termination();
+        if meta.should_terminate {
+            return MoveSuggestion(MIN_EVAL, None)
+        }
+
+        meta.node_count += 1;
+        if board.halfmove_clock >= 50 {
+            return MoveSuggestion(Stalemate, None);
+        }
+
+        let stand_pat = eval_position_direct(&board);
+
+        if stand_pat >= beta {
+            return MoveSuggestion(beta, None);
+        }
+        if alpha < stand_pat {
+            alpha = stand_pat;
+        }
+
+        let mut max_suggestion = None;
+        let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves(MoveType::CaptureCheckEvade);
+        let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta);
+        legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
+
+        for (m, _) in legal_moves_scored {
+            // meta.path.push(m);
+            meta.ply += 1;
+            board.apply_move(&m);
+            let eval = -AlphaBetaSearch::eval_quiescence(board, -beta, -alpha, &mut meta).0;
+            board.undo_move(&m);
+            meta.ply -= 1;
+            // meta.path.pop();
+
+            if eval >= beta {
+                return MoveSuggestion(beta, None);
+            }
+            if alpha > eval {
+                alpha = eval;
+                max_suggestion = Some(MoveSuggestion(eval, Some(m)));
+            }
+        }
+
+        max_suggestion.unwrap_or_else(|| if board.piece_bbs[board.active_player][KING] & king_danger_mask != 0 {
+            MoveSuggestion(Losing(meta.ply), None)
+        } else {
+            MoveSuggestion(alpha, None)
         })
     }
 

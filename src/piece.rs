@@ -27,6 +27,17 @@ pub struct Move {
     pub previous_ep_square: Option<Square>
 }
 
+impl Move {
+    pub fn empty() -> Move {
+        Move {
+            from: Square(0),
+            to: Square(0),
+            move_type: MoveAction::Normal,
+            previous_ep_square: None,
+        }
+    }
+}
+
 impl Square {
     pub(crate) const fn new(file: u8, rank: u8) -> Square {
         Square(rank * 8 + file)

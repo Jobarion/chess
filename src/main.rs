@@ -2,6 +2,7 @@ use crate::board::board::{Board};
 use std::convert::TryFrom;
 use std::error::Error;
 use std::io::Write;
+use std::primitive;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -12,6 +13,7 @@ use crate::bitboard::BitBoard;
 use crate::evaluator::{AlphaBetaSearch, MoveFinder, MoveSuggestion};
 use crate::iter_deep::eval_iter_deep;
 use crate::lichess::LichessBot;
+use crate::movegen::MoveType;
 use crate::piece::{Color, Move, Square};
 
 mod board;
@@ -72,6 +74,8 @@ async fn main() {
         },
         _ => unreachable!("Match is exhaustive")
     }
+    // run_eval("8/4k3/8/b1R1p2b/8/8/8/K7 w - - 0 1", 10, 0, false);
+    // run_eval("8/8/k7/b1R4p/8/K7/8/8 w - - 0 1", 10, 0, false);
 
     // let fen: &String = matches.get_one("fen").unwrap();
     // let fen = "rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1";
@@ -136,6 +140,12 @@ async fn main() {
 
 fn run_eval(fen: &str, time_seconds: u32, hash_size: usize, uci_only: bool) {
     let mut board = Board::from_fen(fen).unwrap();
+    // let m = Move::from_uci("c5a5", &board).unwrap();
+    // board.apply_move(&m);
+    // let m = Move::from_uci("f1b5", &board).unwrap();
+    // board.apply_move(&m);
+    // println!("{}", evaluator::eval_position_direct(&board));
+
     let end_time_millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() + time_seconds as u128 * 1000;
     let result = iter_deep::eval_iter_deep(&mut board, end_time_millis, hash_size, false, uci_only);
     if let Some(MoveSuggestion(eval, Some(best_move))) = result {
@@ -174,7 +184,7 @@ fn compare_perft(fen: &str, depth: u8) -> std::io::Result<()>{
     let mut board = Board::from_fen(fen).unwrap();
 
     let board_clone = board.clone();
-    let our_valid_moves = board.legal_moves().legal_moves;
+    let our_valid_moves = board.legal_moves(MoveType::All).legal_moves;
     let stockfish_valid_moves = String::from_utf8(child.wait_with_output()?.stdout).unwrap()
         .split("\n")
         .skip(1)

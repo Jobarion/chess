@@ -1,4 +1,5 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use itertools::Itertools;
 use crate::{Board, AlphaBetaSearch, MoveFinder, MoveSuggestion};
 use crate::evaluator::MinMaxMetadata;
 use crate::hashing::{AlphaBetaData, TranspositionTable};
@@ -18,17 +19,12 @@ pub fn eval_iter_deep(mut board: &mut Board, end_time: u128, hash_size: usize, c
             if !quiet {
                 println!("Terminated depth {}", depth);
             }
-            // if let Some(old_best) = &best_move {
-            //     if move_at_depth.0 > old_best.0 {
-            //         best_move = Some(move_at_depth);
-            //     }
-            // }
             break;
         } else {
+            best_move = Some(move_at_depth);
             if !quiet {
                 println!("Completed depth {} with result {:?}", depth, move_at_depth);
             }
-            best_move = Some(move_at_depth);
         }
         let elapsed_time = start.elapsed().as_millis();
         if previous_elapsed == 0 {

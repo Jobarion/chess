@@ -16,6 +16,9 @@ pub const FILES: [BitBoard; 8] = [BitBoard(0x0101010101010101 << 0), BitBoard(0x
 
 impl BitBoard {
 
+    pub const ALL: BitBoard = BitBoard(0xFFFFFFFFFFFFFFFF);
+    pub const NONE: BitBoard = BitBoard(0);
+
     pub fn is_set(&self, sqr: Square) -> bool {
         self.0 & (1 << sqr.0) != 0
     }

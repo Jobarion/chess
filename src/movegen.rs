@@ -1,6 +1,7 @@
 use std::arch::x86_64::{__m128i, __m256i, _mm256_and_si256, _mm256_or_si256, _mm256_set_epi64x, _mm256_sllv_epi64, _mm256_srlv_epi64, _mm256_storeu_si256, _mm_and_si128, _mm_or_si128, _mm_set_epi64x, _mm_sllv_epi64, _mm_srlv_epi64, _mm_store_si128};
 use std::cmp::{max, min};
-use crate::{BitBoard, Board, Color, Move, Square};
+use itertools::all;
+use crate::{BitBoard, bitboard, Board, Color, Move, Square};
 use crate::bitboard::*;
 use crate::board::board::CastleState;
 use crate::Color::*;
@@ -16,9 +17,18 @@ pub struct LegalMoveData {
     pub pin_mask: BitBoard,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum MoveType {
+    All,
+    Capture,
+    CaptureCheckEvade,
+    Quiet
+}
+
 impl Board {
 
-    pub(crate) fn legal_moves(&self) -> LegalMoveData {
+    pub(crate) fn legal_moves(&self, move_type: MoveType) -> LegalMoveData {
+
         let king = self.piece_bbs[self.active_player][PieceType::KING];
         let king_square = Square(king.0.trailing_zeros() as u8);
 
@@ -28,25 +38,31 @@ impl Board {
         // self.print_highlighted(king_danger_squares);
 
         if king_danger_squares & king_square != 0 {
-            return self.generate_king_danger_moves(king_square, king_danger_squares);
+            return self.generate_king_danger_moves(king_square, king_danger_squares, move_type);
         }
+        let allowed_mask = match move_type {
+            MoveType::All => BitBoard::ALL,
+            MoveType::Capture => self.color_bbs[!self.active_player],
+            MoveType::CaptureCheckEvade => self.color_bbs[!self.active_player],
+            MoveType::Quiet => !self.color_bbs[!self.active_player]
+        };
         let pin_mask = self.generate_pin_mask(king_square, self.active_player);
 
         let mut moves: Vec<Move> = vec!();
 
         //Checking once if the pin mask is set is probably slightly faster, but it would duplicate the entire loop block below
         for sqr in self.piece_bbs[self.active_player][PieceType::ROOK] {
-            let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player);
+            let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
         for sqr in self.piece_bbs[self.active_player][PieceType::BISHOP] {
-            let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player);
+            let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
         for sqr in self.piece_bbs[self.active_player][PieceType::QUEEN] {
-            let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player);
+            let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
@@ -54,7 +70,7 @@ impl Board {
             if pin_mask.is_set(sqr) {
                 continue;
             }
-            let move_mask = KNIGHT_MOVES[sqr] & !self.color_bbs[self.active_player];
+            let move_mask = KNIGHT_MOVES[sqr] & !self.color_bbs[self.active_player] & allowed_mask;
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
         let ep_mask = self.en_passant_square
@@ -62,28 +78,33 @@ impl Board {
             .unwrap_or(BitBoard(0));
         if self.active_player == WHITE {
             for sqr in self.piece_bbs[WHITE][PAWN] {
-                let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask);
+                let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
         }
         else {
             for sqr in self.piece_bbs[BLACK][PAWN] {
-                let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask);
+                let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
         }
-        let move_mask = self.generate_king_moves(king_square, king_danger_squares) & !king_danger_squares;
+        let move_mask = self.generate_king_moves(king_square, king_danger_squares) & !king_danger_squares & allowed_mask;
         moves.append(&mut self.moves_from_target_bitboard(king_square, move_mask));
 
         LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask }
     }
 
-    fn generate_king_danger_moves(&self, king_square: Square, king_danger_squares: BitBoard) -> LegalMoveData {
+    fn generate_king_danger_moves(&self, king_square: Square, king_danger_squares: BitBoard, move_type: MoveType) -> LegalMoveData {
+        let allowed_mask = match move_type {
+            MoveType::All | MoveType::CaptureCheckEvade => BitBoard::ALL,
+            MoveType::Capture => self.color_bbs[!self.active_player],
+            MoveType::Quiet => !self.color_bbs[!self.active_player]
+        };
         let mut moves: Vec<Move> = vec!();
 
-        let evasive_king_moves = KING_MOVES[king_square] & !king_danger_squares & !self.color_bbs[self.active_player];
+        let evasive_king_moves = KING_MOVES[king_square] & !king_danger_squares & !self.color_bbs[self.active_player] & allowed_mask;
         moves.append(&mut self.moves_from_target_bitboard(king_square, evasive_king_moves));
 
         //Double check, the king can only run away
@@ -120,19 +141,23 @@ impl Board {
                 ep_check_capture_mask |= ep_square;
             }
         }
+        let pawn_allowed_mask = match move_type {
+            MoveType::Capture => allowed_mask | ep_check_capture_mask,
+            _ => allowed_mask
+        };
 
         for sqr in self.piece_bbs[self.active_player][ROOK] {
-            let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & check_prevention_mask;
+            let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
         for sqr in self.piece_bbs[self.active_player][BISHOP] {
-            let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & check_prevention_mask;
+            let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
         for sqr in self.piece_bbs[self.active_player][QUEEN] {
-            let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & check_prevention_mask;
+            let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
@@ -140,7 +165,7 @@ impl Board {
             if pin_mask.is_set(sqr) {
                 continue;
             }
-            let move_mask = KNIGHT_MOVES[sqr] & !self.color_bbs[self.active_player] & check_prevention_mask;
+            let move_mask = KNIGHT_MOVES[sqr] & !self.color_bbs[self.active_player] & check_prevention_mask & allowed_mask;
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
         let ep_mask = self.en_passant_square
@@ -149,14 +174,14 @@ impl Board {
         let pawn_check_prevention_mask= check_prevention_mask | ep_check_capture_mask;
         if self.active_player == WHITE {
             for sqr in self.piece_bbs[WHITE][PAWN] {
-                let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & pawn_check_prevention_mask;
+                let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & pawn_check_prevention_mask & pawn_allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
         }
         else {
             for sqr in self.piece_bbs[BLACK][PAWN] {
-                let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & pawn_check_prevention_mask;
+                let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & pawn_check_prevention_mask & pawn_allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
@@ -214,7 +239,6 @@ impl Board {
         ray_mask
     }
 
-    //TODO simdify?
     fn generate_pawn_moves_squares_white(&self, sqr: Square, ep_mask: BitBoard) -> BitBoard {
         let free = !self.occupied();
         let mut push_mask = BitBoard::from(sqr) << 8 & free;
@@ -245,23 +269,6 @@ impl Board {
         }
         king_moves
     }
-
-    // fn generate_pin_mask_avx(&self, sqr: Square, pinned_color: Color) -> BitBoard {
-    //     println!("{}", self);
-    //     let king_mask = BitBoard::from(sqr);
-    //     let mut free = !(self.white | self.black);
-    //     let first_hit_pieces = self.ks_queen_moves(free, king_mask) & self.mask_for_color(pinned_color);
-    //     self.print_highlighted(first_hit_pieces);
-    //     free |= first_hit_pieces;
-    //     self.print_highlighted(free);
-    //     let second_hit_pieces = self.ks_queen_moves(free, king_mask);
-    //     self.print_highlighted(second_hit_pieces);
-    //     let potential_attackers = self.ks_queen_moves(free, king_mask) & self.mask_for_color(!pinned_color);
-    //     self.print_highlighted(potential_attackers);
-    //     let bq_attackers = (potential_attackers & BISHOP_MOVES[sqr] & (self.bishops | self.queens));
-    //     let rq_attackers = (potential_attackers & ROOK_MOVES[sqr] & (self.rooks | self.queens));
-    //     rq_attackers | bq_attackers
-    // }
 
     fn generate_pin_mask(&self, sqr: Square, pinned_color: Color) -> BitBoard {
         self.generate_pin_mask_rq(sqr, pinned_color) | self.generate_pin_mask_bq(sqr, pinned_color)
@@ -672,17 +679,6 @@ impl Board {
         }
         moves
     }
-
-    // fn moves_from_source_bitboard(&self, to: Square, mut possible_sources: BitBoard) -> Vec<Move> {
-    //     let mut moves: Vec<Move> = vec!();
-    //     while possible_sources != 0 {
-    //         let move_id = possible_sources.0.trailing_zeros();
-    //         let from = Square(move_id as u8);
-    //         possible_sources = possible_sources.toggle(from);
-    //         self.create_moves(from, to, &mut moves);
-    //     }
-    //     moves
-    // }
 
     pub fn create_moves(&self, from: Square, to: Square, moves: &mut Vec<Move>) {
         let from_piece = self.board[from].expect("From piece must exist");

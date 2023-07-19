@@ -8,6 +8,7 @@ pub mod board {
     use crate::board::board::CastleState::{Allowed, Forbidden};
     use crate::evaluator::{PIECE_VALUE, PST};
     use crate::hashing::{PerftData, TranspositionTable, Zobrist, ZobristHash};
+    use crate::movegen::MoveType;
     use crate::piece::*;
     use crate::piece::PieceType::*;
     use crate::piece::Color::*;
@@ -387,7 +388,7 @@ pub mod board {
                 return hash_result;
             }
             let mut perft = 0;
-            for lmove in self.legal_moves().legal_moves {
+            for lmove in self.legal_moves(MoveType::All).legal_moves {
                 //Don't descend into king captures
                 if let MoveAction::Capture(KING) = lmove.move_type {
                     continue;
