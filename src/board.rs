@@ -1,6 +1,6 @@
 pub mod board {
     use std::convert::{Into, TryFrom};
-    use std::fmt::{Display, Error, Formatter, Write};
+    use std::fmt::{Display, Error, Formatter};
     use std::str::Split;
     use std::str::SplitWhitespace;
 
@@ -74,8 +74,8 @@ pub mod board {
 
     #[derive(Copy, Clone, Debug)]
     pub enum GamePhase {
-        MIDGAME = 0,
-        ENDGAME = 1,
+        Midgame = 0,
+        Endgame = 1,
     }
 
     impl<T, const N: usize> std::ops::Index<GamePhase> for [T; N] {
@@ -96,8 +96,7 @@ pub mod board {
     #[derive(Copy, Clone, Debug)]
     pub struct EvalInfo {
         pub material: [u32; 2],
-        pub psqt: [i16; 2],
-        pub game_phase: GamePhase
+        pub psqt: [i16; 2]
     }
 
     #[derive(Copy, Clone, Debug)]
@@ -111,8 +110,8 @@ pub mod board {
         pub fullmove: u32,
 
         pub piece_bbs: [[BitBoard; 6]; 2],
-        pub color_bbs: [BitBoard; 2],
-        pub eval_info: EvalInfo,
+        pub color_bbs: [BitBoard; 2], //WHITE BLACK
+        pub eval_info: [EvalInfo; 2], //MIDGAME ENDGAME
         pub zobrist_key: ZobristHash,
         pub zobrist_hash_data: Zobrist,
     }
@@ -132,11 +131,10 @@ pub mod board {
                 zobrist_key: 0,
                 piece_bbs: [[BitBoard(0); 6]; 2],
                 color_bbs: [BitBoard(0); 2],
-                eval_info: EvalInfo {
+                eval_info: [EvalInfo {
                     material: [0; 2],
-                    psqt: [0; 2],
-                    game_phase: GamePhase::MIDGAME
-                },
+                    psqt: [0; 2]
+                }; 2],
                 zobrist_hash_data: Zobrist::new(),
             };
 
@@ -176,12 +174,14 @@ pub mod board {
             self.piece_bbs[piece.color][piece.piece_type] |= sqr;
             self.color_bbs[piece.color] |= sqr;
 
-            self.eval_info.material[piece.color] += PIECE_VALUE[self.eval_info.game_phase][piece.piece_type];
+            self.eval_info[GamePhase::Midgame].material[piece.color] += PIECE_VALUE[GamePhase::Midgame][piece.piece_type];
+            self.eval_info[GamePhase::Endgame].material[piece.color] += PIECE_VALUE[GamePhase::Endgame][piece.piece_type];
             let correct_square = match piece.color {
-                WHITE => sqr,
-                BLACK => sqr.flip()
+                White => sqr,
+                Black => sqr.flip()
             };
-            self.eval_info.psqt[piece.color] += PST[self.eval_info.game_phase][piece.piece_type][correct_square];
+            self.eval_info[GamePhase::Midgame].psqt[piece.color] += PST[GamePhase::Midgame][piece.piece_type][correct_square];
+            self.eval_info[GamePhase::Endgame].psqt[piece.color] += PST[GamePhase::Endgame][piece.piece_type][correct_square];
 
             previous
         }
@@ -193,12 +193,14 @@ pub mod board {
                 self.board[sqr] = None;
                 self.piece_bbs[piece.color][piece.piece_type] &= anti_mask;
                 self.color_bbs[piece.color] &= anti_mask;
-                self.eval_info.material[piece.color] -= PIECE_VALUE[self.eval_info.game_phase][piece.piece_type];
+                self.eval_info[GamePhase::Midgame].material[piece.color] -= PIECE_VALUE[GamePhase::Midgame][piece.piece_type];
+                self.eval_info[GamePhase::Endgame].material[piece.color] -= PIECE_VALUE[GamePhase::Endgame][piece.piece_type];
                 let correct_square = match piece.color {
-                    WHITE => sqr,
-                    BLACK => sqr.flip()
+                    White => sqr,
+                    Black => sqr.flip()
                 };
-                self.eval_info.psqt[piece.color] -= PST[self.eval_info.game_phase][piece.piece_type][correct_square];
+                self.eval_info[GamePhase::Midgame].psqt[piece.color] -= PST[GamePhase::Midgame][piece.piece_type][correct_square];
+                self.eval_info[GamePhase::Endgame].psqt[piece.color] -= PST[GamePhase::Endgame][piece.piece_type][correct_square];
                 Some(piece)
             } else {
                 None
@@ -225,7 +227,7 @@ pub mod board {
         }
 
         pub fn occupied(&self) -> BitBoard {
-            self.color_bbs[WHITE] | self.color_bbs[BLACK]
+            self.color_bbs[White] | self.color_bbs[Black]
         }
 
         pub fn apply_move(&mut self, piece_move: &Move) {
@@ -242,10 +244,10 @@ pub mod board {
                     self.set(moved_piece, *to);
                     self.halfmove_clock = 0;
                 },
-                Move{from, to, move_type: MoveAction::Normal, ..} if moved_piece.piece_type == PAWN => {
+                Move{from, to, move_type: MoveAction::Normal, ..} if moved_piece.piece_type == Pawn => {
                     let pawn_starting_rank = match self.active_player {
-                        WHITE => 1,
-                        BLACK => 6
+                        White => 1,
+                        Black => 6
                     };
                     if from.rank() == pawn_starting_rank && (to.rank() as i32 - from.rank() as i32).abs() == 2 {
                         new_ep_square = Some(Square::new(from.file(), (from.rank() + to.rank()) / 2));
@@ -275,38 +277,38 @@ pub mod board {
             let mut copt_black = self.castling_options_black.clone();
             if self.castling_options_white.0 == Allowed {
                 copt_white.0 = match moved_piece {
-                    Piece {piece_type: KING, color: WHITE} => Forbidden(self.fullmove * 2),
-                    Piece {piece_type: ROOK, color: WHITE} if piece_move.from == Square::new(0, 0) => Forbidden(self.fullmove * 2),
+                    Piece {piece_type: King, color: White } => Forbidden(self.fullmove * 2),
+                    Piece {piece_type: Rook, color: White } if piece_move.from == Square::new(0, 0) => Forbidden(self.fullmove * 2),
                     _ if piece_move.to == Square::new(0, 0) => Forbidden(self.fullmove * 2 + 1), //Capture
                     _ => Allowed
                 }
             }
             if self.castling_options_white.1 == Allowed {
                 copt_white.1 = match moved_piece {
-                    Piece {piece_type: KING, color: WHITE} => Forbidden(self.fullmove * 2),
-                    Piece {piece_type: ROOK, color: WHITE} if piece_move.from == Square::new(7, 0) => Forbidden(self.fullmove * 2),
+                    Piece {piece_type: King, color: White } => Forbidden(self.fullmove * 2),
+                    Piece {piece_type: Rook, color: White } if piece_move.from == Square::new(7, 0) => Forbidden(self.fullmove * 2),
                     _ if piece_move.to == Square::new(7, 0) => Forbidden(self.fullmove * 2 + 1), //Capture
                     _ => Allowed
                 }
             }
             if self.castling_options_black.0 == Allowed {
                 copt_black.0 = match moved_piece {
-                    Piece {piece_type: KING, color: BLACK} => Forbidden(self.fullmove * 2 + 1),
-                    Piece {piece_type: ROOK, color: BLACK} if piece_move.from == Square::new(0, 7) => Forbidden(self.fullmove * 2 + 1),
+                    Piece {piece_type: King, color: Black } => Forbidden(self.fullmove * 2 + 1),
+                    Piece {piece_type: Rook, color: Black } if piece_move.from == Square::new(0, 7) => Forbidden(self.fullmove * 2 + 1),
                     _ if piece_move.to == Square::new(0, 7) => Forbidden(self.fullmove * 2), //Capture
                     _ => Allowed
                 }
             }
             if self.castling_options_black.1 == Allowed {
                 copt_black.1 = match moved_piece {
-                    Piece {piece_type: KING, color: BLACK} => Forbidden(self.fullmove * 2 + 1),
-                    Piece {piece_type: ROOK, color: BLACK} if piece_move.from == Square::new(7, 7) => Forbidden(self.fullmove * 2 + 1),
+                    Piece {piece_type: King, color: Black } => Forbidden(self.fullmove * 2 + 1),
+                    Piece {piece_type: Rook, color: Black } if piece_move.from == Square::new(7, 7) => Forbidden(self.fullmove * 2 + 1),
                     _ if piece_move.to == Square::new(7, 7) => Forbidden(self.fullmove * 2), //Capture
                     _ => Allowed
                 }
             }
             self.set_castle_options(copt_white, copt_black);
-            if self.active_player == BLACK {
+            if self.active_player == Black {
                 self.fullmove += 1;
             }
             self.change_active();
@@ -314,10 +316,10 @@ pub mod board {
 
         pub fn undo_move(&mut self, piece_move: &Move) {
             self.change_active();
-            if self.active_player == BLACK {
+            if self.active_player == Black {
                 self.fullmove -= 1;
             }
-            let half_move_timer = if self.active_player == WHITE {
+            let half_move_timer = if self.active_player == White {
                 self.fullmove * 2
             } else {
                 self.fullmove * 2 + 1
@@ -348,10 +350,10 @@ pub mod board {
 
             match piece_move {
                 Move{from, to: _, move_type: MoveAction::Promotion(_, None), previous_ep_square: _ } => {
-                    self.set(Piece{piece_type: PieceType::PAWN, color: self.active_player}, *from);
+                    self.set(Piece{piece_type: PieceType::Pawn, color: self.active_player}, *from);
                 }
                 Move{from, to, move_type: MoveAction::Promotion(_, Some(captured_type)), previous_ep_square: _} => {
-                    self.set(Piece{piece_type: PieceType::PAWN, color: self.active_player}, *from);
+                    self.set(Piece{piece_type: PieceType::Pawn, color: self.active_player}, *from);
                     self.set(Piece{piece_type: *captured_type, color: !self.active_player}, *to);
                 }
                 Move{from, to, move_type: MoveAction::Capture(captured_type), previous_ep_square: _} => {
@@ -361,7 +363,7 @@ pub mod board {
                 Move{from, to: _, move_type: MoveAction::EnPassant, previous_ep_square} => {
                     self.set(moved_piece, *from);
                     let previous_ep_square = previous_ep_square.expect("EnPassant undo requires previous en passant square");
-                    self.set(Piece{piece_type: PieceType::PAWN, color: !self.active_player}, Square::new(previous_ep_square.file(), from.rank()));
+                    self.set(Piece{piece_type: PieceType::Pawn, color: !self.active_player}, Square::new(previous_ep_square.file(), from.rank()));
                 }
                 Move { from, to: _, move_type: MoveAction::Normal, previous_ep_square: _ } => {
                     self.set(moved_piece, *from);
@@ -390,7 +392,7 @@ pub mod board {
             let mut perft = 0;
             for lmove in self.legal_moves(MoveType::All).legal_moves {
                 //Don't descend into king captures
-                if let MoveAction::Capture(KING) = lmove.move_type {
+                if let MoveAction::Capture(King) = lmove.move_type {
                     continue;
                 }
                 self.apply_move(&lmove);
@@ -433,8 +435,8 @@ pub mod board {
             }
             fen.push(' ');
             fen.push_str(match self.active_player {
-                WHITE => "w ",
-                BLACK => "b "
+                White => "w ",
+                Black => "b "
             });
             let mut castle_opts = "".to_string();
             castle_opts.push_str(match self.castling_options_white {
@@ -488,10 +490,10 @@ pub mod board {
             for file in 0..FILE_SIZE {
                 for rank in 0..RANK_SIZE {
                     match pieces[Square::new(file, rank)] {
-                        Some(Piece{piece_type: PieceType::KING, color: Color::WHITE}) => {
+                        Some(Piece{piece_type: PieceType::King, color: Color::White }) => {
                             kings = (Square::new(file, rank), kings.1);
                         },
-                        Some(Piece{piece_type: PieceType::KING, color: Color::BLACK}) => {
+                        Some(Piece{piece_type: PieceType::King, color: Color::Black }) => {
                             kings = (kings.0, Square::new(file, rank));
                         },
                         _ => {}
@@ -542,8 +544,8 @@ pub mod board {
 
         fn parse_active_player(active_player: &str) -> Option<Color> {
             match active_player {
-                "w" => Some(WHITE),
-                "b" => Some(BLACK),
+                "w" => Some(White),
+                "b" => Some(Black),
                 _ => None
             }
         }

@@ -4,21 +4,18 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Neg};
 
 use core::option::Option;
-use std::env::set_current_dir;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use itertools::{Itertools};
 
-use crate::board::board::{Board};
+use crate::board::board::{Board, GamePhase};
 use crate::Color::*;
 use crate::evaluator::Evaluation::{Estimate, Winning, Losing, Stalemate};
 use crate::hashing::{AlphaBetaData, NodeType, TranspositionTable};
-use crate::hashing::NodeType::Alpha;
 use crate::movegen::{LegalMoveData, MoveType};
-use crate::piece::{Color, Move, MoveAction, PieceType};
+use crate::piece::{Move, MoveAction, PieceType};
 
 use crate::piece::PieceType::*;
-use crate::run_eval;
 
 pub const MIN_EVAL: Evaluation = Losing(0);
 pub const MAX_EVAL: Evaluation = Winning(0);
@@ -37,21 +34,16 @@ const PST_EG_ROOK: [i16; 64] = [-9, 2, 3, -1, -5, -13, 4, -20, -6, -6, 0, 2, -9,
 const PST_EG_QUEEN: [i16; 64] = [-33, -28, -22, -43, -5, -32, -20, -41, -22, -23, -30, -16, -16, -23, -36, -32, -16, -27, 15, 6, 9, 17, 10, 5, -18, 28, 19, 47, 31, 34, 39, 23, 3, 22, 24, 45, 57, 40, 57, 36, -20, 6, 9, 49, 47, 35, 19, 9, -17, 20, 32, 41, 58, 25, 30, 0, -9, 22, 22, 27, 27, 19, 10, 20];
 const PST_EG_KING: [i16; 64] = [-53, -34, -21, -11, -28, -14, -24, -43, -27, -11, 4, 13, 14, 4, -5, -17, -19, -3, 11, 21, 23, 16, 7, -9, -18, -4, 21, 24, 27, 23, 9, -11, -8, 22, 24, 27, 26, 33, 26, 3, 10, 17, 23, 15, 20, 45, 44, 13, -12, 17, 14, 17, 17, 38, 23, 11, -74, -35, -18, -18, -11, 15, 4, -17];
 
-const PST_PAWN: [[i16; 64]; 2] = [PST_MG_PAWN, PST_EG_PAWN];
-const PST_KNIGHT: [[i16; 64]; 2] = [PST_MG_KNIGHT, PST_EG_KNIGHT];
-const PST_BISHOP: [[i16; 64]; 2] = [PST_MG_BISHOP, PST_EG_BISHOP];
-const PST_ROOK: [[i16; 64]; 2] = [PST_MG_ROOK, PST_EG_ROOK];
-const PST_QUEEN: [[i16; 64]; 2] = [PST_MG_QUEEN, PST_EG_QUEEN];
-const PST_KING: [[i16; 64]; 2] = [PST_MG_KING, PST_EG_KING];
-
 pub const PST: [[[i16; 64]; 6]; 2] = [
-    [PST_MG_PAWN, PST_MG_KNIGHT, PST_MG_BISHOP, PST_MG_ROOK, PST_MG_QUEEN, PST_MG_KING],
-    [PST_EG_PAWN, PST_EG_KNIGHT, PST_EG_BISHOP, PST_EG_ROOK, PST_EG_QUEEN, PST_EG_KING]
+    [PST_MG_KING, PST_MG_QUEEN, PST_MG_ROOK, PST_MG_BISHOP, PST_MG_KNIGHT, PST_MG_PAWN],
+    [PST_EG_KING, PST_EG_QUEEN, PST_EG_ROOK, PST_EG_BISHOP, PST_EG_KNIGHT, PST_EG_PAWN]
 ];
 
 const PIECE_VALUE_MG: [u32; 6] = [0, 1025, 477, 365, 337, 82];
 const PIECE_VALUE_EG: [u32; 6] = [0, 936, 512, 297, 281, 94];
-// const PIECE_VALUE_NAIVE: [u32; 6] = [0, 9, 6, 3, 3, 1];
+
+const PIECE_VALUE_MG_EG_TRANSITION_END: u32 = ((PIECE_VALUE_MG[1] + PIECE_VALUE_MG[2] + PIECE_VALUE_MG[3] + PIECE_VALUE_MG[4]) / 4 * 3 + PIECE_VALUE_MG[5] * 5) * 2;
+const PIECE_VALUE_MG_EG_TRANSITION_START: u32 = ((PIECE_VALUE_MG[1] + PIECE_VALUE_MG[2] + PIECE_VALUE_MG[3] + PIECE_VALUE_MG[4]) / 4 * 6 + PIECE_VALUE_EG[5] * 5) * 2;
 
 pub const PIECE_VALUE: [[u32; 6]; 2] = [PIECE_VALUE_MG, PIECE_VALUE_EG];
 
@@ -120,12 +112,32 @@ impl Display for Evaluation {
 }
 
 pub fn eval_position_direct(board: &Board) -> Evaluation {
-    let material_eval: i32 = board.eval_info.material[WHITE] as i32 - board.eval_info.material[BLACK] as i32;
-    let pst_eval: i16 = board.eval_info.psqt[WHITE] - board.eval_info.psqt[BLACK];
+    let material_white_mg = board.eval_info[GamePhase::Midgame].material[White];
+    let material_black_mg = board.eval_info[GamePhase::Midgame].material[Black];
 
-    let mut eval = (material_eval + pst_eval as i32) as f32;
-    // let mut eval = material_eval as f32;
-    if board.active_player == BLACK {
+    let material_sum = material_white_mg + material_black_mg;
+    let eg_ratio = if material_sum >= PIECE_VALUE_MG_EG_TRANSITION_START {
+        0_f32
+    } else if material_sum <= PIECE_VALUE_MG_EG_TRANSITION_END {
+        1_f32
+    } else {
+        let diff = (PIECE_VALUE_MG_EG_TRANSITION_START - PIECE_VALUE_MG_EG_TRANSITION_END) as f32;
+        let progress = (PIECE_VALUE_MG_EG_TRANSITION_START - material_sum) as f32;
+        progress / diff
+    };
+    let mg_ratio = 1_f32 - eg_ratio;
+
+    let material_eval_mg: i32 = material_white_mg as i32 - material_black_mg as i32;
+    let material_eval_eg: i32 = board.eval_info[GamePhase::Endgame].material[White] as i32 - board.eval_info[GamePhase::Endgame].material[Black] as i32;
+
+    let pst_eval_mg: i16 = board.eval_info[GamePhase::Midgame].psqt[White] - board.eval_info[GamePhase::Midgame].psqt[Black];
+    let pst_eval_eg: i16 = board.eval_info[GamePhase::Endgame].psqt[White] - board.eval_info[GamePhase::Endgame].psqt[Black];
+
+    let material_eval = material_eval_mg as f32 * mg_ratio + material_eval_eg as f32 * eg_ratio;
+    let pst_eval = pst_eval_mg as f32 * mg_ratio + pst_eval_eg as f32 * eg_ratio;
+
+    let mut eval = material_eval + pst_eval;
+    if board.active_player == Black {
         eval = -eval;
     }
     Estimate(eval)
@@ -134,15 +146,6 @@ pub fn eval_position_direct(board: &Board) -> Evaluation {
 
 #[derive(Debug, Copy, Clone)]
 pub struct MoveSuggestion(pub Evaluation, pub Option<Move>);
-
-pub struct Stats {
-    pub evaluated_positions: u128,
-    pub best_move: Option<MoveSuggestion>
-}
-
-pub struct AlphaBetaSearch {
-    max_depth: usize
-}
 
 const MAX_DEPTH: usize = 128;
 const KILLER_MOVE_SLOTS: usize = 2;
@@ -181,6 +184,8 @@ impl MinMaxMetadata<'_> {
         }
     }
 }
+
+pub struct AlphaBetaSearch;
 
 impl AlphaBetaSearch {
 
@@ -225,7 +230,7 @@ impl AlphaBetaSearch {
 
         let mut max_eval = MIN_EVAL;
         let mut max_suggestion = None;
-        let old_alpha = alpha;
+        let mut node_type = NodeType::Alpha;
         let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves(MoveType::All);
         let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta);
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
@@ -235,6 +240,7 @@ impl AlphaBetaSearch {
             meta.ply += 1;
             board.apply_move(&m);
             let eval = -AlphaBetaSearch::eval_negamax(max_depth, board, -beta, -alpha, &mut meta).0;
+            // println!("{}move: {} {} ({})", " ".repeat(meta.ply as usize - 1), m.to_uci(), eval, eval_position_direct(&board));
             board.undo_move(&m);
             meta.ply -= 1;
             // meta.path.pop();
@@ -243,30 +249,27 @@ impl AlphaBetaSearch {
                 max_suggestion = Some(MoveSuggestion(eval, Some(m)));
                 max_eval = eval;
             }
-            if max_eval > alpha {
-                alpha = max_eval;
-            }
-            if alpha > beta {
+
+            if eval >= beta {
+                meta.tt_table.store(AlphaBetaData::create(max_depth, NodeType::Beta, eval, m.clone()), board.zobrist_key);
                 if m.move_type == MoveAction::Normal {
                     AlphaBetaSearch::store_killer_move(m.clone(), &mut meta);
                 }
                 break;
             }
+
+            if eval > alpha {
+                alpha = max_eval;
+                node_type = NodeType::Exact;
+            }
         }
 
         if let Some(MoveSuggestion(eval, Some(best_move))) = max_suggestion {
-            let node_type = if eval <= old_alpha {
-                NodeType::Alpha
-            } else if eval >= beta {
-                NodeType::Beta
-            } else {
-                NodeType::Exact
-            };
             meta.tt_table.store(AlphaBetaData::create(max_depth, node_type, eval, best_move.clone()), board.zobrist_key);
         }
 
         max_suggestion.unwrap_or_else(|| {
-            if board.piece_bbs[board.active_player][KING] & king_danger_mask != 0 {
+            if board.piece_bbs[board.active_player][King] & king_danger_mask != 0 {
                 MoveSuggestion(Losing(meta.ply), None)
             } else {
                 MoveSuggestion(Stalemate, None)
@@ -300,13 +303,11 @@ impl AlphaBetaSearch {
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
 
         for (m, _) in legal_moves_scored {
-            // meta.path.push(m);
             meta.ply += 1;
             board.apply_move(&m);
             let eval = -AlphaBetaSearch::eval_quiescence(board, -beta, -alpha, &mut meta).0;
             board.undo_move(&m);
             meta.ply -= 1;
-            // meta.path.pop();
 
             if eval >= beta {
                 return MoveSuggestion(beta, None);
@@ -317,7 +318,7 @@ impl AlphaBetaSearch {
             }
         }
 
-        max_suggestion.unwrap_or_else(|| if board.piece_bbs[board.active_player][KING] & king_danger_mask != 0 {
+        max_suggestion.unwrap_or_else(|| if board.piece_bbs[board.active_player][King] & king_danger_mask != 0 {
             MoveSuggestion(Losing(meta.ply), None)
         } else {
             MoveSuggestion(alpha, None)
@@ -347,9 +348,9 @@ impl AlphaBetaSearch {
             .map(|m| {
                 //max is 55 (assuming no king captures)
                 let mvv_lva_score = match m {
-                    Move{move_type: MoveAction::EnPassant, ..} => AlphaBetaSearch::mvv_lva_score(PieceType::PAWN, PieceType::PAWN),
+                    Move{move_type: MoveAction::EnPassant, ..} => AlphaBetaSearch::mvv_lva_score(PieceType::Pawn, PieceType::Pawn),
                     Move{move_type: MoveAction::Capture(captured), from, ..} => AlphaBetaSearch::mvv_lva_score(captured, board.board[from].unwrap().piece_type),
-                    Move{move_type: MoveAction::Promotion(_, Some(captured)), ..} => AlphaBetaSearch::mvv_lva_score(captured, PieceType::PAWN),
+                    Move{move_type: MoveAction::Promotion(_, Some(captured)), ..} => AlphaBetaSearch::mvv_lva_score(captured, PieceType::Pawn),
                     _ => 0
                 };
                 let killer_score = match m {
@@ -387,12 +388,12 @@ impl AlphaBetaSearch {
 
     fn mvv_lva_piece_score(piece: PieceType) -> u32 {
         match piece {
-            PieceType::PAWN => 1,
-            PieceType::KNIGHT => 2,
-            PieceType::BISHOP => 3,
-            PieceType::ROOK => 4,
-            PieceType::QUEEN => 5,
-            PieceType::KING => 6,
+            PieceType::Pawn => 1,
+            PieceType::Knight => 2,
+            PieceType::Bishop => 3,
+            PieceType::Rook => 4,
+            PieceType::Queen => 5,
+            PieceType::King => 6,
         }
     }
 }

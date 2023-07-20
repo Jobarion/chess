@@ -2,12 +2,10 @@ use crate::board::board::{Board};
 use std::convert::TryFrom;
 use std::error::Error;
 use std::io::Write;
-use std::primitive;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{arg, command, value_parser};
-use clap::error::ContextKind::PriorArg;
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
 use crate::evaluator::{AlphaBetaSearch, MoveFinder, MoveSuggestion};
@@ -24,9 +22,6 @@ mod lichess;
 mod iter_deep;
 mod hashing;
 mod movegen;
-
-const TERMINAL: bool = true;
-const DEFAULT_DEPTH: u8 = 6;
 
 #[tokio::main]
 async fn main() {
@@ -74,7 +69,7 @@ async fn main() {
         },
         _ => unreachable!("Match is exhaustive")
     }
-    // run_eval("8/4k3/8/b1R1p2b/8/8/8/K7 w - - 0 1", 10, 0, false);
+    // run_eval("k7/8/8/8/8/3K4/8/8 w - - 0 1", 10, 0, false);
     // run_eval("8/8/k7/b1R4p/8/K7/8/8 w - - 0 1", 10, 0, false);
 
     // let fen: &String = matches.get_one("fen").unwrap();

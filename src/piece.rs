@@ -1,6 +1,6 @@
 
 use std::convert::TryFrom;
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Index, IndexMut, Not, RangeInclusive};
 
 use crate::board::board::{Board, BoardIndex, FILE_SIZE};
@@ -257,18 +257,18 @@ impl TryFrom<char> for Piece {
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         let piece_type = match value.to_lowercase().to_string().as_str() {
-            "p" => PAWN,
-            "b" => BISHOP,
-            "n" => KNIGHT,
-            "r" => ROOK,
-            "q" => QUEEN,
-            "k" => KING,
+            "p" => Pawn,
+            "b" => Bishop,
+            "n" => Knight,
+            "r" => Rook,
+            "q" => Queen,
+            "k" => King,
             _ => return Err(())
         };
         if value.is_ascii_uppercase() {
-            Ok(Piece{ piece_type, color: WHITE })
+            Ok(Piece{ piece_type, color: White })
         } else {
-            Ok(Piece{ piece_type, color: BLACK })
+            Ok(Piece{ piece_type, color: Black })
         }
     }
 }
@@ -278,8 +278,8 @@ impl Into<char> for Piece {
     fn into(self) -> char {
         let Piece{piece_type, color} = self;
         match color {
-            WHITE => Into::<char>::into(piece_type).to_ascii_uppercase(),
-            BLACK => PieceType::into(piece_type)
+            White => Into::<char>::into(piece_type).to_ascii_uppercase(),
+            Black => PieceType::into(piece_type)
         }
     }
 }
@@ -287,12 +287,12 @@ impl Into<char> for Piece {
 impl Into<char> for PieceType {
     fn into(self) -> char {
         match self {
-            PAWN => 'p',
-            BISHOP => 'b',
-            KNIGHT => 'n',
-            ROOK => 'r',
-            QUEEN => 'q',
-            KING => 'k'
+            Pawn => 'p',
+            Bishop => 'b',
+            Knight => 'n',
+            Rook => 'r',
+            Queen => 'q',
+            King => 'k'
         }
     }
 }
@@ -300,16 +300,16 @@ impl Into<char> for PieceType {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PieceType {
-    PAWN = 5,
-    KNIGHT = 4,
-    BISHOP = 3,
-    ROOK = 2,
-    QUEEN = 1,
-    KING = 0
+    King = 0,
+    Queen = 1,
+    Rook = 2,
+    Bishop = 3,
+    Knight = 4,
+    Pawn = 5,
 }
 
 impl PieceType {
-    pub const PIECES: RangeInclusive<usize> = (KING as usize)..=(PAWN as usize);
+    pub const PIECES: RangeInclusive<usize> = (King as usize)..=(Pawn as usize);
 }
 
 impl<T, const N: usize> Index<PieceType> for [T; N] {
@@ -345,7 +345,7 @@ impl<T, const N: usize> IndexMut<Color> for [T; N] {
 impl PieceType {
     pub fn is_slider(&self) -> bool {
         match self {
-            KNIGHT | KING | PAWN => false,
+            Knight | King | Pawn => false,
             _ => true
         }
     }
@@ -353,15 +353,15 @@ impl PieceType {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Color {
-    WHITE = 0,
-    BLACK = 1
+    White = 0,
+    Black = 1
 }
 
 impl Color {
     pub fn next(&self) -> Color {
         match self {
-            WHITE => BLACK,
-            BLACK => WHITE,
+            White => Black,
+            Black => White,
         }
     }
 }
@@ -371,8 +371,8 @@ impl Not for Color {
 
     fn not(self) -> Self::Output {
         match self {
-            WHITE => BLACK,
-            BLACK => WHITE
+            White => Black,
+            Black => White
         }
     }
 }

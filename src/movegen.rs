@@ -1,7 +1,6 @@
 use std::arch::x86_64::{__m128i, __m256i, _mm256_and_si256, _mm256_or_si256, _mm256_set_epi64x, _mm256_sllv_epi64, _mm256_srlv_epi64, _mm256_storeu_si256, _mm_and_si128, _mm_or_si128, _mm_set_epi64x, _mm_sllv_epi64, _mm_srlv_epi64, _mm_store_si128};
 use std::cmp::{max, min};
-use itertools::all;
-use crate::{BitBoard, bitboard, Board, Color, Move, Square};
+use crate::{BitBoard, Board, Color, Move, Square};
 use crate::bitboard::*;
 use crate::board::board::CastleState;
 use crate::Color::*;
@@ -29,7 +28,7 @@ impl Board {
 
     pub(crate) fn legal_moves(&self, move_type: MoveType) -> LegalMoveData {
 
-        let king = self.piece_bbs[self.active_player][PieceType::KING];
+        let king = self.piece_bbs[self.active_player][PieceType::King];
         let king_square = Square(king.0.trailing_zeros() as u8);
 
         let king_danger_squares = self.generate_king_danger_squares();
@@ -51,22 +50,22 @@ impl Board {
         let mut moves: Vec<Move> = vec!();
 
         //Checking once if the pin mask is set is probably slightly faster, but it would duplicate the entire loop block below
-        for sqr in self.piece_bbs[self.active_player][PieceType::ROOK] {
+        for sqr in self.piece_bbs[self.active_player][PieceType::Rook] {
             let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
-        for sqr in self.piece_bbs[self.active_player][PieceType::BISHOP] {
+        for sqr in self.piece_bbs[self.active_player][PieceType::Bishop] {
             let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
-        for sqr in self.piece_bbs[self.active_player][PieceType::QUEEN] {
+        for sqr in self.piece_bbs[self.active_player][PieceType::Queen] {
             let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
-        for sqr in self.piece_bbs[self.active_player][PieceType::KNIGHT] {
+        for sqr in self.piece_bbs[self.active_player][PieceType::Knight] {
             if pin_mask.is_set(sqr) {
                 continue;
             }
@@ -76,15 +75,15 @@ impl Board {
         let ep_mask = self.en_passant_square
             .map(| sqr| BitBoard::from(sqr))
             .unwrap_or(BitBoard(0));
-        if self.active_player == WHITE {
-            for sqr in self.piece_bbs[WHITE][PAWN] {
+        if self.active_player == White {
+            for sqr in self.piece_bbs[White][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
         }
         else {
-            for sqr in self.piece_bbs[BLACK][PAWN] {
+            for sqr in self.piece_bbs[Black][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
@@ -146,22 +145,22 @@ impl Board {
             _ => allowed_mask
         };
 
-        for sqr in self.piece_bbs[self.active_player][ROOK] {
+        for sqr in self.piece_bbs[self.active_player][Rook] {
             let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
-        for sqr in self.piece_bbs[self.active_player][BISHOP] {
+        for sqr in self.piece_bbs[self.active_player][Bishop] {
             let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
-        for sqr in self.piece_bbs[self.active_player][QUEEN] {
+        for sqr in self.piece_bbs[self.active_player][Queen] {
             let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
             moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
         }
-        for sqr in self.piece_bbs[self.active_player][KNIGHT] {
+        for sqr in self.piece_bbs[self.active_player][Knight] {
             if pin_mask.is_set(sqr) {
                 continue;
             }
@@ -172,15 +171,15 @@ impl Board {
             .map(| sqr| BitBoard::from(sqr))
             .unwrap_or(BitBoard(0));
         let pawn_check_prevention_mask= check_prevention_mask | ep_check_capture_mask;
-        if self.active_player == WHITE {
-            for sqr in self.piece_bbs[WHITE][PAWN] {
+        if self.active_player == White {
+            for sqr in self.piece_bbs[White][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & pawn_check_prevention_mask & pawn_allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
         }
         else {
-            for sqr in self.piece_bbs[BLACK][PAWN] {
+            for sqr in self.piece_bbs[Black][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & pawn_check_prevention_mask & pawn_allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
                 moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
@@ -243,19 +242,19 @@ impl Board {
         let free = !self.occupied();
         let mut push_mask = BitBoard::from(sqr) << 8 & free;
         push_mask |= push_mask << 8 & free & RANKS[3];
-        push_mask | (PAWN_CAPTURE_MOVES_WHITE[sqr] & (self.color_bbs[BLACK] | ep_mask))
+        push_mask | (PAWN_CAPTURE_MOVES_WHITE[sqr] & (self.color_bbs[Black] | ep_mask))
     }
 
     fn generate_pawn_moves_squares_black(&self, sqr: Square, ep_mask: BitBoard) -> BitBoard {
         let free = !self.occupied();
         let mut push_mask = BitBoard::from(sqr) >> 8 & free;
         push_mask |= push_mask >> 8 & free & RANKS[4];
-        push_mask | (PAWN_CAPTURE_MOVES_BLACK[sqr] & (self.color_bbs[WHITE] | ep_mask))
+        push_mask | (PAWN_CAPTURE_MOVES_BLACK[sqr] & (self.color_bbs[White] | ep_mask))
     }
 
     fn generate_king_moves(&self, sqr: Square, king_danger_squares: BitBoard) -> BitBoard {
         let mut king_moves = KING_MOVES[sqr] & !self.color_bbs[self.active_player];
-        let no_castle_squares = king_danger_squares | (self.occupied() ^ self.piece_bbs[WHITE][KING] ^ self.piece_bbs[BLACK][KING]);
+        let no_castle_squares = king_danger_squares | (self.occupied() ^ self.piece_bbs[White][King] ^ self.piece_bbs[Black][King]);
         if let (Some(c_square), _) = self.current_castle_options() {
             let rook_passing_square = Square::new((c_square.file() as isize + sqr.direction_between(&c_square).0) as u8, c_square.rank());
             if Board::ray_between_squares_inclusive(sqr, c_square) & no_castle_squares == 0 && self.board[rook_passing_square] == None {
@@ -282,7 +281,7 @@ impl Board {
             let sq = Square::new(n, sqr.rank());
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
+                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -302,7 +301,7 @@ impl Board {
             let sq = Square::new(n, sqr.rank());
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
+                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -322,7 +321,7 @@ impl Board {
             let sq = Square::new(sqr.file(), n);
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
+                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -342,7 +341,7 @@ impl Board {
             let sq = Square::new(sqr.file(), n);
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == ROOK) {
+                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -374,7 +373,7 @@ impl Board {
             let sq = Square::new(sqr.file() + n, sqr.rank() + n);
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
+                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -397,7 +396,7 @@ impl Board {
             let sq = Square::new(sqr.file() - n, sqr.rank() - n);
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
+                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -420,7 +419,7 @@ impl Board {
             let sq = Square::new(sqr.file() + n, sqr.rank() - n);
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
+                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -443,7 +442,7 @@ impl Board {
             let sq = Square::new(sqr.file() - n, sqr.rank() + n);
             if let Some(Piece{piece_type, color}) = self.board[sq] {
                 if color != pinned_color {
-                    if !first_hit && (piece_type == QUEEN || piece_type == BISHOP) {
+                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
                         pin_squares |= pin_squares_ray;
                     }
                     break;
@@ -461,16 +460,16 @@ impl Board {
     }
 
     fn generate_attacker_squares(&self, king_sqr: Square) -> BitBoard {
-        let mut mask = if self.active_player == WHITE {
-            PAWN_CAPTURE_MOVES_WHITE[king_sqr] & self.piece_bbs[BLACK][PAWN]
+        let mut mask = if self.active_player == White {
+            PAWN_CAPTURE_MOVES_WHITE[king_sqr] & self.piece_bbs[Black][Pawn]
         } else {
-            PAWN_CAPTURE_MOVES_BLACK[king_sqr] & self.piece_bbs[WHITE][PAWN]
+            PAWN_CAPTURE_MOVES_BLACK[king_sqr] & self.piece_bbs[White][Pawn]
         };
-        mask |= KNIGHT_MOVES[king_sqr] & self.piece_bbs[!self.active_player][KNIGHT];
+        mask |= KNIGHT_MOVES[king_sqr] & self.piece_bbs[!self.active_player][Knight];
         let king_mask = BitBoard(1 << king_sqr.0);
         let opp_boards = &self.piece_bbs[!self.active_player];
-        mask |= self.ks_rook_moves(!self.occupied(), king_mask) & (opp_boards[ROOK] | opp_boards[QUEEN]);
-        mask |= self.ks_bishop_moves(!self.occupied(), king_mask) & (opp_boards[BISHOP] | opp_boards[QUEEN]);
+        mask |= self.ks_rook_moves(!self.occupied(), king_mask) & (opp_boards[Rook] | opp_boards[Queen]);
+        mask |= self.ks_bishop_moves(!self.occupied(), king_mask) & (opp_boards[Bishop] | opp_boards[Queen]);
         mask
     }
 
@@ -478,20 +477,20 @@ impl Board {
         let _opp_mask = self.color_bbs[!self.active_player];
         let opp_c = !self.active_player;
         let pawn_attack_mask = match self.active_player {
-            WHITE => PAWN_CAPTURE_MOVES_BLACK,
-            BLACK => PAWN_CAPTURE_MOVES_WHITE
+            White => PAWN_CAPTURE_MOVES_BLACK,
+            Black => PAWN_CAPTURE_MOVES_WHITE
         };
-        let mut danger_mask = KING_MOVES[self.piece_bbs[opp_c][KING].0.trailing_zeros() as usize];
-        for pawn_sqr in self.piece_bbs[opp_c][PAWN] {
+        let mut danger_mask = KING_MOVES[self.piece_bbs[opp_c][King].0.trailing_zeros() as usize];
+        for pawn_sqr in self.piece_bbs[opp_c][Pawn] {
             danger_mask |= pawn_attack_mask[pawn_sqr];
         }
-        for knight_sqr in self.piece_bbs[opp_c][KNIGHT] {
+        for knight_sqr in self.piece_bbs[opp_c][Knight] {
             danger_mask |= KNIGHT_MOVES[knight_sqr];
         }
         //Remove attacked king for sliding attacks
-        let occlusion_mask = self.occupied() ^ self.piece_bbs[self.active_player][KING];
-        danger_mask |= self.ks_rook_moves(!occlusion_mask, self.piece_bbs[opp_c][ROOK] | self.piece_bbs[opp_c][QUEEN]);
-        danger_mask | self.ks_bishop_moves(!occlusion_mask, self.piece_bbs[opp_c][BISHOP] | self.piece_bbs[opp_c][QUEEN])
+        let occlusion_mask = self.occupied() ^ self.piece_bbs[self.active_player][King];
+        danger_mask |= self.ks_rook_moves(!occlusion_mask, self.piece_bbs[opp_c][Rook] | self.piece_bbs[opp_c][Queen]);
+        danger_mask | self.ks_bishop_moves(!occlusion_mask, self.piece_bbs[opp_c][Bishop] | self.piece_bbs[opp_c][Queen])
     }
 
     pub fn ks_rook_moves(&self, propagate_mask: BitBoard, rook_sliders: BitBoard) -> BitBoard {
@@ -684,18 +683,18 @@ impl Board {
         let from_piece = self.board[from].expect("From piece must exist");
         match self.board[to] {
             Some(Piece{piece_type, color: _}) => match from_piece.piece_type {
-                PieceType::PAWN if (from_piece.color == WHITE && to.rank() == 7) || (from_piece.color == BLACK && to.rank() == 0) => {
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(QUEEN, Some(piece_type)), previous_ep_square: self.en_passant_square });
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(KNIGHT, Some(piece_type)), previous_ep_square: self.en_passant_square });
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(ROOK, Some(piece_type)), previous_ep_square: self.en_passant_square });
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(BISHOP, Some(piece_type)), previous_ep_square: self.en_passant_square });
+                PieceType::Pawn if (from_piece.color == White && to.rank() == 7) || (from_piece.color == Black && to.rank() == 0) => {
+                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Queen, Some(piece_type)), previous_ep_square: self.en_passant_square });
+                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Knight, Some(piece_type)), previous_ep_square: self.en_passant_square });
+                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Rook, Some(piece_type)), previous_ep_square: self.en_passant_square });
+                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Bishop, Some(piece_type)), previous_ep_square: self.en_passant_square });
                 }
                 _ => moves.push(Move { from, to, move_type: MoveAction::Capture(piece_type), previous_ep_square: self.en_passant_square })
             },
             None => match from_piece.piece_type {
-                PieceType::PAWN => match self.en_passant_square {
+                PieceType::Pawn => match self.en_passant_square {
                     Some(ep_sqr) if ep_sqr == to => {
-                        let king_square = Square(self.piece_bbs[self.active_player][KING].0.trailing_zeros() as u8);
+                        let king_square = Square(self.piece_bbs[self.active_player][King].0.trailing_zeros() as u8);
                         if king_square.rank() == from.rank() {
                             let attacker_dir = king_square.direction_between(&from);
                             let mut file = king_square.file() as isize + attacker_dir.0;
@@ -706,22 +705,22 @@ impl Board {
                                 }
                                 match self.board[Square::new(file as u8, king_square.rank())] {
                                     None => file += attacker_dir.0,
-                                    Some(Piece{color, piece_type: ROOK}) | Some(Piece{color, piece_type: QUEEN}) if color == !self.active_player => return,
+                                    Some(Piece{color, piece_type: Rook }) | Some(Piece{color, piece_type: Queen }) if color == !self.active_player => return,
                                     _ => break
                                 }
                             }
                         }
                         moves.push(Move { from, to, move_type: MoveAction::EnPassant, previous_ep_square: self.en_passant_square })
                     },
-                    _ if (from_piece.color == WHITE && to.rank() == 7) || (from_piece.color == BLACK && to.rank() == 0) => {
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(QUEEN, None), previous_ep_square: self.en_passant_square });
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(KNIGHT, None), previous_ep_square: self.en_passant_square });
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(ROOK, None), previous_ep_square: self.en_passant_square });
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(BISHOP, None), previous_ep_square: self.en_passant_square });
+                    _ if (from_piece.color == White && to.rank() == 7) || (from_piece.color == Black && to.rank() == 0) => {
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Queen, None), previous_ep_square: self.en_passant_square });
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Knight, None), previous_ep_square: self.en_passant_square });
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Rook, None), previous_ep_square: self.en_passant_square });
+                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Bishop, None), previous_ep_square: self.en_passant_square });
                     }
                     _ => moves.push(Move { from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square}),
                 },
-                PieceType::KING => match self.current_castle_options() {
+                PieceType::King => match self.current_castle_options() {
                     (Some(castle_sqr), _) if to == castle_sqr && castle_sqr.rank() == 0 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(3, 0)), previous_ep_square: self.en_passant_square}),
                     (Some(castle_sqr), _) if to == castle_sqr && castle_sqr.rank() == 7 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(3, 7)), previous_ep_square: self.en_passant_square}),
                     (_, Some(castle_sqr)) if to == castle_sqr && castle_sqr.rank() == 0 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(5, 0)), previous_ep_square: self.en_passant_square}),
@@ -735,8 +734,8 @@ impl Board {
 
     fn current_castle_options(&self) -> (Option<Square>, Option<Square>) {
         let (options, (s1, s2)) = match self.active_player {
-            WHITE => (&self.castling_options_white, CASTLING_SQUARES_WHITE),
-            BLACK => (&self.castling_options_black, CASTLING_SQUARES_BLACK)
+            White => (&self.castling_options_white, CASTLING_SQUARES_WHITE),
+            Black => (&self.castling_options_black, CASTLING_SQUARES_BLACK)
         };
         match options {
             (CastleState::Allowed, CastleState::Allowed) => (Some(s1), Some(s2)),

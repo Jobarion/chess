@@ -1,6 +1,5 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use itertools::Itertools;
-use crate::{Board, AlphaBetaSearch, MoveFinder, MoveSuggestion};
+use crate::{Board, AlphaBetaSearch, MoveSuggestion};
 use crate::evaluator::MinMaxMetadata;
 use crate::hashing::{AlphaBetaData, TranspositionTable};
 

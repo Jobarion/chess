@@ -13,7 +13,7 @@ use serde::{Deserialize};
 
 
 use crate::{Board, Color, eval_iter_deep, Move, MoveSuggestion};
-use crate::Color::{BLACK, WHITE};
+use crate::Color::{Black, White};
 
 use crate::lichess::BotEvent::{Challenge, GameStart};
 
@@ -176,7 +176,7 @@ impl LichessBot {
                             board.apply_move(&m);
                         }
                         if let Some(color) = color_opt {
-                            if color == WHITE {
+                            if color == White {
                                 us_time = state.wtime;
                                 them_time = state.btime;
                                 us_inc = state.winc;
@@ -205,14 +205,14 @@ impl LichessBot {
                     }
 
                     if white.id == self.bot_id.to_string() {
-                        color_opt = Some(WHITE);
+                        color_opt = Some(White);
                         us_time = state.wtime;
                         them_time = state.btime;
                         us_inc = state.winc;
                         them_inc = state.binc;
                     }
                     else if black.id == self.bot_id.to_string() {
-                        color_opt = Some(BLACK);
+                        color_opt = Some(Black);
                         them_time = state.wtime;
                         us_time = state.btime;
                         them_inc = state.winc;
