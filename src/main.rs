@@ -37,7 +37,7 @@ async fn main() {
         )
         .subcommand(command!("lichess")
             .arg(arg!(--token <TOKEN> "Authorization token").required(true))
-            .arg(arg!(--challengers <PLAYERS> "Whitelisted players").default_values(vec!["jobarion"]))
+            .arg(arg!(--challengers <PLAYERS> "Whitelisted players"))
             .arg(arg!(--hash <HASH_SIZE> "Hash table size in MB").value_parser(value_parser!(usize)).default_value("32"))
         )
         .subcommand(command!("perft")
@@ -63,7 +63,7 @@ async fn main() {
         },
         Some(("lichess", sub_matches)) => {
             let token = sub_matches.get_one::<String>("token").unwrap();
-            let players: Vec<String> = sub_matches.get_many("challengers").unwrap().cloned().collect_vec();
+            let players: Vec<String> = sub_matches.get_many("challengers").map(|v|v.cloned().collect_vec()).unwrap_or(vec![]);
             let hash_size = sub_matches.get_one::<usize>("hash").unwrap();
             run_lichess(token.clone(), players, *hash_size).await.unwrap();
         },

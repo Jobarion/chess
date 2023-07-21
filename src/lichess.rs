@@ -96,7 +96,7 @@ impl LichessBot {
             // println!("Event loop, event = {:?}", event);
             match event {
                 Challenge{challenge: ChallengeData{id, url: _, challenger}} => {
-                    if self.whitelist.contains(&challenger.id) {
+                    if self.whitelist.is_empty() || self.whitelist.contains(&challenger.id) {
                         self.accept_challenge(id).await?;
                     } else {
                         self.decline_challenge(id).await?;
@@ -257,7 +257,6 @@ impl LichessBot {
         if them_time > us_time {
             //Expect the game to take 30 more moves (incl. incr).
             //If time is low and increment high, just take half of our time and live of increment.
-            println!("{} {} {} {}", us_time, us_inc, us_time / 30 + us_inc, us_time / 2);
             min(us_time / 30 + us_inc, us_time / 2)
         } else {
             them_time / 30 + (us_time - them_time) / 5 //Use up our time advantage

@@ -40,7 +40,7 @@ pub fn eval_iter_deep(mut board: &mut Board, end_time: u128, hash_size: usize, c
             if !quiet {
                 println!("Time left: {}. Expected for next iteration: {}", time_left, expected_duration_next);
             }
-            if conserve_time && (current_time > end_time || expected_duration_next / 2 > time_left) {
+            if conserve_time && (current_time > end_time || expected_duration_next > time_left) {
                 if !quiet {
                     println!("Terminating early");
                 }

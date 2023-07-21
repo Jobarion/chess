@@ -119,7 +119,7 @@ impl IHashData for PerftData {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum NodeType {
     Alpha,
     Beta,

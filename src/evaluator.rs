@@ -209,7 +209,7 @@ impl AlphaBetaSearch {
                         alpha = max(alpha, tt_entry.eval);
                     },
                     NodeType::Beta => {
-                        beta = min(alpha, tt_entry.eval);
+                        beta = min(beta, tt_entry.eval);
                     },
                     _ => ()
                 }
@@ -251,7 +251,7 @@ impl AlphaBetaSearch {
             }
 
             if eval >= beta {
-                meta.tt_table.store(AlphaBetaData::create(max_depth, NodeType::Beta, eval, m.clone()), board.zobrist_key);
+                meta.tt_table.store(AlphaBetaData::create(max_depth, NodeType::Beta, beta, m.clone()), board.zobrist_key);
                 if m.move_type == MoveAction::Normal {
                     AlphaBetaSearch::store_killer_move(m.clone(), &mut meta);
                 }
@@ -265,7 +265,7 @@ impl AlphaBetaSearch {
         }
 
         if let Some(MoveSuggestion(eval, Some(best_move))) = max_suggestion {
-            meta.tt_table.store(AlphaBetaData::create(max_depth, node_type, eval, best_move.clone()), board.zobrist_key);
+            meta.tt_table.store(AlphaBetaData::create(max_depth, node_type, alpha, best_move.clone()), board.zobrist_key);
         }
 
         max_suggestion.unwrap_or_else(|| {
