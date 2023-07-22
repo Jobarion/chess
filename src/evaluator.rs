@@ -201,18 +201,23 @@ impl AlphaBetaSearch {
             return MoveSuggestion(MIN_EVAL, None)
         }
 
+        meta.node_count += 1;
+        if board.halfmove_clock >= 50 {
+            return MoveSuggestion(Stalemate, None);
+        }
+
+        let alphaOriginal = alpha;
+
         if let Some(tt_entry) = meta.tt_table.retrieve(board.zobrist_key) {
             if tt_entry.depth >= depth {
                 match tt_entry.node_type {
                     NodeType::Exact => return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move)),
-                    NodeType::Alpha => return MoveSuggestion(max(alpha, tt_entry.eval), Some(tt_entry.best_move)),
-                    NodeType::Beta => return MoveSuggestion(min(beta, tt_entry.eval), Some(tt_entry.best_move)),
-                    // NodeType::Alpha => {
-                    //     alpha = max(alpha, tt_entry.eval);
-                    // },
-                    // NodeType::Beta => {
-                    //     beta = min(beta, tt_entry.eval);
-                    // },
+                    NodeType::LowerBound => {
+                        alpha = max(alpha, tt_entry.eval);
+                    },
+                    NodeType::UpperBound => {
+                        beta = min(beta, tt_entry.eval);
+                    },
                     _ => unreachable!("Undefined node type in TT")
                 }
                 if alpha >= beta {
@@ -221,53 +226,48 @@ impl AlphaBetaSearch {
             }
         }
 
-        meta.node_count += 1;
-        if board.halfmove_clock >= 50 {
-            return MoveSuggestion(Stalemate, None);
-        }
-
         if depth == 0 {
             return AlphaBetaSearch::eval_quiescence(board, alpha, beta, &mut meta);
         }
 
         let mut max_eval = MIN_EVAL;
         let mut max_suggestion = None;
-        let mut node_type = NodeType::Alpha;
         let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves(MoveType::All);
         let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta);
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
 
         for (m, _) in legal_moves_scored {
-            // meta.path.push(m);
             meta.ply += 1;
             board.apply_move(&m);
             let eval = -AlphaBetaSearch::eval_negamax(depth - 1, board, -beta, -alpha, &mut meta).0;
-            // println!("{}move: {} {} ({})", " ".repeat(meta.ply as usize - 1), m.to_uci(), eval, eval_position_direct(&board));
             board.undo_move(&m);
             meta.ply -= 1;
-            // meta.path.pop();
 
             if eval > max_eval {
                 max_suggestion = Some(MoveSuggestion(eval, Some(m)));
                 max_eval = eval;
             }
 
-            if eval >= beta {
-                meta.tt_table.store(AlphaBetaData::create(depth, NodeType::Beta, beta, m), board.zobrist_key);
+            alpha = max(alpha, max_eval);
+
+            if alpha >= beta {
                 if m.move_type == MoveAction::Normal {
                     AlphaBetaSearch::store_killer_move(m.clone(), &mut meta);
                 }
                 break;
             }
-
-            if eval > alpha {
-                alpha = max_eval;
-                node_type = NodeType::Exact;
-            }
         }
 
         if let Some(MoveSuggestion(eval, Some(best_move))) = max_suggestion {
-            meta.tt_table.store(AlphaBetaData::create(depth, node_type, alpha, best_move), board.zobrist_key);
+            let flag = if eval <= alphaOriginal {
+                NodeType::UpperBound
+            } else if eval >= beta {
+                NodeType::LowerBound
+            } else {
+                NodeType::Exact
+            };
+
+            meta.tt_table.store(AlphaBetaData::create(depth, flag, eval, best_move), board.zobrist_key);
         }
 
         max_suggestion.unwrap_or_else(|| {

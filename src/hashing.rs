@@ -121,8 +121,8 @@ impl IHashData for PerftData {
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum NodeType {
-    Alpha,
-    Beta,
+    UpperBound,
+    LowerBound,
     Exact,
     None
 }
