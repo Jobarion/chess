@@ -195,23 +195,25 @@ impl AlphaBetaSearch {
         AlphaBetaSearch::eval_negamax(depth, board, alpha, beta, &mut meta)
     }
 
-    fn eval_negamax(max_depth: u8, board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
+    fn eval_negamax(depth: u8, board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
         meta.check_termination();
         if meta.should_terminate {
             return MoveSuggestion(MIN_EVAL, None)
         }
 
         if let Some(tt_entry) = meta.tt_table.retrieve(board.zobrist_key) {
-            if tt_entry.depth >= max_depth {
+            if tt_entry.depth >= depth {
                 match tt_entry.node_type {
                     NodeType::Exact => return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move)),
-                    NodeType::Alpha => {
-                        alpha = max(alpha, tt_entry.eval);
-                    },
-                    NodeType::Beta => {
-                        beta = min(beta, tt_entry.eval);
-                    },
-                    _ => ()
+                    NodeType::Alpha => return MoveSuggestion(max(alpha, tt_entry.eval), Some(tt_entry.best_move)),
+                    NodeType::Beta => return MoveSuggestion(min(beta, tt_entry.eval), Some(tt_entry.best_move)),
+                    // NodeType::Alpha => {
+                    //     alpha = max(alpha, tt_entry.eval);
+                    // },
+                    // NodeType::Beta => {
+                    //     beta = min(beta, tt_entry.eval);
+                    // },
+                    _ => unreachable!("Undefined node type in TT")
                 }
                 if alpha >= beta {
                     return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move));
@@ -224,7 +226,7 @@ impl AlphaBetaSearch {
             return MoveSuggestion(Stalemate, None);
         }
 
-        if max_depth == meta.ply {
+        if depth == 0 {
             return AlphaBetaSearch::eval_quiescence(board, alpha, beta, &mut meta);
         }
 
@@ -239,7 +241,7 @@ impl AlphaBetaSearch {
             // meta.path.push(m);
             meta.ply += 1;
             board.apply_move(&m);
-            let eval = -AlphaBetaSearch::eval_negamax(max_depth, board, -beta, -alpha, &mut meta).0;
+            let eval = -AlphaBetaSearch::eval_negamax(depth - 1, board, -beta, -alpha, &mut meta).0;
             // println!("{}move: {} {} ({})", " ".repeat(meta.ply as usize - 1), m.to_uci(), eval, eval_position_direct(&board));
             board.undo_move(&m);
             meta.ply -= 1;
@@ -251,7 +253,7 @@ impl AlphaBetaSearch {
             }
 
             if eval >= beta {
-                meta.tt_table.store(AlphaBetaData::create(max_depth, NodeType::Beta, beta, m.clone()), board.zobrist_key);
+                meta.tt_table.store(AlphaBetaData::create(depth, NodeType::Beta, beta, m), board.zobrist_key);
                 if m.move_type == MoveAction::Normal {
                     AlphaBetaSearch::store_killer_move(m.clone(), &mut meta);
                 }
@@ -265,7 +267,7 @@ impl AlphaBetaSearch {
         }
 
         if let Some(MoveSuggestion(eval, Some(best_move))) = max_suggestion {
-            meta.tt_table.store(AlphaBetaData::create(max_depth, node_type, alpha, best_move.clone()), board.zobrist_key);
+            meta.tt_table.store(AlphaBetaData::create(depth, node_type, alpha, best_move), board.zobrist_key);
         }
 
         max_suggestion.unwrap_or_else(|| {

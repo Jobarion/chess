@@ -22,7 +22,7 @@ pub fn eval_iter_deep(mut board: &mut Board, end_time: u128, hash_size: usize, c
         } else {
             best_move = Some(move_at_depth);
             if !quiet {
-                println!("Completed depth {} with result {:?}", depth, move_at_depth);
+                println!("Completed depth {} with result {:?}, nodes: {}", depth, move_at_depth, meta.node_count);
             }
         }
         let elapsed_time = start.elapsed().as_millis();
