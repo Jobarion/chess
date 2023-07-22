@@ -1,4 +1,6 @@
 pub mod board {
+    use std::collections::hash_map::Entry;
+    use std::collections::HashMap;
     use std::convert::{Into, TryFrom};
     use std::fmt::{Display, Error, Formatter};
     use std::str::Split;
@@ -99,7 +101,6 @@ pub mod board {
         pub psqt: [i16; 2]
     }
 
-    #[derive(Copy, Clone, Debug)]
     pub struct Board {
         pub board: [PieceOpt; (RANK_SIZE * FILE_SIZE) as usize],
         pub active_player: Color,
@@ -114,6 +115,7 @@ pub mod board {
         pub eval_info: [EvalInfo; 2], //MIDGAME ENDGAME
         pub zobrist_key: ZobristHash,
         pub zobrist_hash_data: Zobrist,
+        state_map: HashMap<ZobristHash, u8>,
     }
     //rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 
@@ -136,6 +138,7 @@ pub mod board {
                     psqt: [0; 2]
                 }; 2],
                 zobrist_hash_data: Zobrist::new(),
+                state_map: HashMap::new(),
             };
 
             for n in 0..64 {
@@ -146,6 +149,11 @@ pub mod board {
             }
             board.zobrist_key = board.rehash();
             board
+        }
+
+        pub fn is_stalemate(&self) -> bool {
+            let repetitions = *self.state_map.get(&self.zobrist_key).unwrap_or(&0);
+            self.halfmove_clock >= 50 || repetitions >= 3
         }
 
         pub fn rehash(&self) -> ZobristHash {
@@ -312,9 +320,18 @@ pub mod board {
                 self.fullmove += 1;
             }
             self.change_active();
+            self.state_map.entry(self.zobrist_key).and_modify(|e| *e += 1).or_insert(1);
         }
 
         pub fn undo_move(&mut self, piece_move: &Move) {
+            if let Entry::Occupied(mut e) = self.state_map.entry(self.zobrist_key) {
+                let new_val = e.get() - 1;
+                if new_val == 0 {
+                    e.remove_entry();
+                } else {
+                    e.insert(new_val);
+                }
+            }
             self.change_active();
             if self.active_player == Black {
                 self.fullmove -= 1;

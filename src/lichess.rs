@@ -222,7 +222,7 @@ impl LichessBot {
                 GameEvent::KeepAlive => (),
             }
 
-            if let Some(mut board) = &mut board_opt {
+            if let Some(mut board) = board_opt.as_mut() {
                 println!("Current position\n{}\n", board);
                 if let Some(color) = color_opt {
                     if board.active_player == color {

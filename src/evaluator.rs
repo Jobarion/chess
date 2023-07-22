@@ -4,6 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Neg};
 
 use core::option::Option;
+use std::collections::HashMap;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use itertools::{Itertools};
@@ -11,7 +12,7 @@ use itertools::{Itertools};
 use crate::board::board::{Board, GamePhase};
 use crate::Color::*;
 use crate::evaluator::Evaluation::{Estimate, Winning, Losing, Stalemate};
-use crate::hashing::{AlphaBetaData, NodeType, TranspositionTable};
+use crate::hashing::{AlphaBetaData, NodeType, TranspositionTable, ZobristHash};
 use crate::movegen::{LegalMoveData, MoveType};
 use crate::piece::{Move, MoveAction, PieceType};
 
@@ -202,7 +203,7 @@ impl AlphaBetaSearch {
         }
 
         meta.node_count += 1;
-        if board.halfmove_clock >= 50 {
+        if board.is_stalemate() {
             return MoveSuggestion(Stalemate, None);
         }
 

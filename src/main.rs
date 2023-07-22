@@ -74,7 +74,6 @@ async fn main() {
 
     // let fen: &String = matches.get_one("fen").unwrap();
     // let fen = "rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq - 0 1";
-    // let mut board = Board::from_fen(fen).unwrap();
     // iter_deep::eval_iter_deep(&mut board, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() + 20000);
     // println!("{}", board.zobrist_key);
 
@@ -178,7 +177,6 @@ fn compare_perft(fen: &str, depth: u8) -> std::io::Result<()>{
 
     let mut board = Board::from_fen(fen).unwrap();
 
-    let board_clone = board.clone();
     let our_valid_moves = board.legal_moves(MoveType::All).legal_moves;
     let stockfish_valid_moves = String::from_utf8(child.wait_with_output()?.stdout).unwrap()
         .split("\n")
@@ -189,7 +187,7 @@ fn compare_perft(fen: &str, depth: u8) -> std::io::Result<()>{
             let uci = parts.next().unwrap();
             let count = parts.next().unwrap().trim();
             let count = u64::from_str(count).unwrap();
-            let uci_move = Move::from_uci(uci, &board_clone);
+            let uci_move = Move::from_uci(uci, &board);
             match uci_move {
                 Err(_) => panic!("Invalid move (we can't generate the move struct) {}", uci),
                 Ok(m) => (m, count)
