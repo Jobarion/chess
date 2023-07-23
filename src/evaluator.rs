@@ -155,7 +155,7 @@ type ScoredMove = (Move, u32);
 
 pub struct MinMaxMetadata<'a> {
     pub killer_moves: KillerMoves,
-    pub tt_table: &'a mut TranspositionTable<AlphaBetaData, 2>,
+    pub tt_table: &'a mut TranspositionTable<AlphaBetaData>,
     pub ply: u8,
     pub node_count: u64,
     pub path: Vec<Move>,
@@ -164,7 +164,7 @@ pub struct MinMaxMetadata<'a> {
 }
 
 impl MinMaxMetadata<'_> {
-    pub fn new(max_time: u128, tt_table: &mut TranspositionTable<AlphaBetaData, 2>) -> MinMaxMetadata<'_> {
+    pub fn new(max_time: u128, tt_table: &mut TranspositionTable<AlphaBetaData>) -> MinMaxMetadata<'_> {
         MinMaxMetadata {
             killer_moves: [[None; KILLER_MOVE_SLOTS]; MAX_DEPTH],
             ply: 0,

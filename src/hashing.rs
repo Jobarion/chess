@@ -187,32 +187,33 @@ impl<N: IHashData + Copy + Clone> Entry<N> {
     }
 }
 
+const BUCKET_SIZE: usize = 2;
+const NEW_ID: usize = 0;
+const DEEP_ID: usize = 1;
+
 #[derive(Copy, Clone)]
-struct Bucket<N, const BUCKET_SIZE: usize> {
+struct Bucket<N> {
     entries: [Entry<N>; BUCKET_SIZE],
 }
 
-impl<N: IHashData + Copy + Clone, const BUCKET_SIZE: usize> Bucket<N, BUCKET_SIZE> {
+impl<N: IHashData + Copy + Clone> Bucket<N> {
+
     pub fn new() -> Self {
         Self {
-            entries: [Entry::new(); BUCKET_SIZE]
+            entries: [Entry::new(); 2]
         }
     }
 
     pub fn store(&mut self, data: N, verification: u32) {
-        let mut lowest_depth_id = 0_usize;
-        let mut lowest_depth = self.entries[0].data.depth();
-        for n in 1..BUCKET_SIZE {
-            let depth_n = self.entries[n].data.depth();
-            if lowest_depth < depth_n {
-                lowest_depth = depth_n;
-                lowest_depth_id = n;
-            }
-        }
-        self.entries[lowest_depth_id] = Entry {
+        let to_insert = Entry {
             data,
             verification
         };
+        if self.entries[DEEP_ID].data.depth() <= data.depth() {
+            self.entries[DEEP_ID] = to_insert;
+        } else {
+            self.entries[NEW_ID] = to_insert;
+        }
     }
 
     pub fn retrieve(&self, verification: u32) -> Option<&N> {
@@ -225,24 +226,22 @@ impl<N: IHashData + Copy + Clone, const BUCKET_SIZE: usize> Bucket<N, BUCKET_SIZ
     }
 }
 
-pub const BUCKET_SIZE_DEFAULT: usize = 2;
-
 fn calc_tt_table_size<N>(mb_used: usize) -> usize {
     let entry_size = std::mem::size_of::<Entry<N>>();
-    let bucket_size = BUCKET_SIZE_DEFAULT * entry_size;
+    let bucket_size = BUCKET_SIZE * entry_size;
     let table_size = 1024 * 1024 * mb_used / bucket_size;
     table_size
 }
 
-pub struct TranspositionTable<N, const BUCKET_SIZE: usize> {
-    buckets: Vec<Bucket<N, BUCKET_SIZE>>,
+pub struct TranspositionTable<N> {
+    buckets: Vec<Bucket<N>>,
     mb_size: usize,
 }
 
-impl<N: IHashData + Copy + Clone, const BUCKET_SIZE: usize> TranspositionTable<N, BUCKET_SIZE> {
+impl<N: IHashData + Copy + Clone> TranspositionTable<N> {
     pub fn new(mb_size: usize) -> Self {
         Self {
-            buckets: vec![Bucket::<N, BUCKET_SIZE>::new(); calc_tt_table_size::<N>(mb_size)],
+            buckets: vec![Bucket::<N>::new(); calc_tt_table_size::<N>(mb_size)],
             mb_size,
         }
     }

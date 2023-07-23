@@ -33,8 +33,8 @@ enum BotEvent {
 #[derive(Deserialize, Debug)]
 struct ChallengeData {
     id: String,
-    url: String,
-    challenger: Player
+    challenger: Player,
+    variant: VariantData,
 }
 
 #[derive(Deserialize, Debug)]
@@ -46,6 +46,11 @@ struct GameStartData {
 #[derive(Deserialize, Debug)]
 struct ProfileData {
     id: String
+}
+
+#[derive(Deserialize, Debug)]
+struct VariantData {
+    key: String
 }
 
 pub struct LichessBot {
@@ -95,8 +100,8 @@ impl LichessBot {
             let event: BotEvent = serde_json::from_str(line.as_str()).unwrap_or(BotEvent::KeepAlive);
             // println!("Event loop, event = {:?}", event);
             match event {
-                Challenge{challenge: ChallengeData{id, url: _, challenger}} => {
-                    if self.whitelist.is_empty() || self.whitelist.contains(&challenger.id) {
+                Challenge{challenge: ChallengeData{id, challenger, variant}} => {
+                    if variant.key.eq("standard") && (self.whitelist.is_empty() || self.whitelist.contains(&challenger.id)) {
                         self.accept_challenge(id).await?;
                     } else {
                         self.decline_challenge(id).await?;

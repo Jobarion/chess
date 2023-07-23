@@ -402,7 +402,7 @@ pub mod board {
             }
         }
 
-        fn _perft(&mut self, depth: u8, mut tt_table: &mut TranspositionTable<PerftData, 2>) -> u64 {
+        fn _perft(&mut self, depth: u8, mut tt_table: &mut TranspositionTable<PerftData>) -> u64 {
             if let Some(hash_result) = tt_table.retrieve(self.zobrist_key).and_then(|r|r.get_nodes(depth)) {
                 return hash_result;
             }
