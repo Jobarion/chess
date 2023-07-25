@@ -2,6 +2,7 @@
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Index, IndexMut, Not, RangeInclusive};
+use crate::bitboard::BitBoard;
 
 use crate::board::board::{Board, BoardIndex, FILE_SIZE};
 use crate::piece::Color::*;
@@ -168,7 +169,11 @@ impl Move {
         let from = Square::try_from(&uci[..2])?;
         let to = Square::try_from(&uci[2..4])?;
         let mut move_vect: Vec<Move> = vec![];
-        board.create_moves(from, to, &mut move_vect);
+        match board.board[from].ok_or(())? {
+            Piece{piece_type: Pawn, ..} => board.create_pawn_moves(from, BitBoard::from(to), &mut move_vect),
+            Piece{piece_type: King, ..} if (to.file() as isize - from.file() as isize).abs() > 1 => board.create_king_castle_moves(from, BitBoard::from(to), &mut move_vect),
+            _ => board.create_other_moves(from, BitBoard::from(to), &mut move_vect),
+        }
         let mut move_iter = move_vect.into_iter();
         match uci.len() {
             4 => {

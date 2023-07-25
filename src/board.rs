@@ -495,14 +495,14 @@ pub mod board {
             let active_player = Board::parse_active_player(fen_parts.next()?)?;
             let castling_options = Board::parse_castling_options(fen_parts.next()?)?;
             let en_passant = Board::parse_en_passant(fen_parts.next()?)?;
-            let halfmove_clock = match fen_parts.next()?.parse::<u32>() {
+            let halfmove_clock = fen_parts.next().map(|v| match v.parse::<u32>() {
                 Ok(t) => t,
                 _ => 0
-            };
-            let fullmove = match fen_parts.next()?.parse::<u32>() {
+            }).unwrap_or(0);
+            let fullmove = fen_parts.next().map(|v| match v.parse::<u32>() {
                 Ok(t) => t,
-                _ => 0
-            };
+                _ => 1
+            }).unwrap_or(0);
             let mut kings: (Square, Square) = (Square::new(FILE_SIZE, 0), Square::new(FILE_SIZE, 0));
             for file in 0..FILE_SIZE {
                 for rank in 0..RANK_SIZE {

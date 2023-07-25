@@ -1,3 +1,4 @@
+use std::arch::x86_64::{__m256i, _mm256_sllv_epi64};
 use crate::board::board::{Board};
 use std::convert::TryFrom;
 use std::error::Error;
@@ -22,6 +23,7 @@ mod lichess;
 mod iter_deep;
 mod hashing;
 mod movegen;
+mod kogge_stone;
 
 #[tokio::main]
 async fn main() {
@@ -51,6 +53,7 @@ async fn main() {
         )
         .get_matches();
 
+
     match matches.subcommand() {
         Some(("eval", sub_matches)) => {
             let fen = sub_matches.get_one::<String>("fen").unwrap();
@@ -78,6 +81,9 @@ async fn main() {
         },
         _ => unreachable!("Match is exhaustive")
     }
+
+    // Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/P1N2Q2/1PPB1P1P/R3KB1q w Qkq - 0 3").unwrap().legal_moves(MoveType::All);
+
     // run_eval("k7/8/8/8/8/3K4/8/8 w - - 0 1", 10, 0, false);
     // run_eval("8/8/k7/b1R4p/8/K7/8/8 w - - 0 1", 10, 0, false);
 
@@ -92,7 +98,7 @@ async fn main() {
     // run_engine();
 
 
-    // compare_perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 6).unwrap();
+    // compare_perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 5).unwrap();
 
 
 

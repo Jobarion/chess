@@ -1,14 +1,15 @@
-use std::arch::x86_64::{__m128i, __m256i, _mm256_and_si256, _mm256_or_si256, _mm256_set_epi64x, _mm256_sllv_epi64, _mm256_srlv_epi64, _mm256_storeu_si256, _mm_and_si128, _mm_or_si128, _mm_set_epi64x, _mm_sllv_epi64, _mm_srlv_epi64, _mm_store_si128};
+use std::arch::x86_64::*;
 use std::cmp::{max, min};
 use crate::{BitBoard, Board, Color, Move, Square};
 use crate::bitboard::*;
-use crate::board::board::CastleState;
+use crate::board::board::{BoardIndex, CastleState};
 use crate::Color::*;
 use crate::piece::{MoveAction, Piece, PieceType};
 use crate::piece::PieceType::*;
 
 pub(crate) const CASTLING_SQUARES_WHITE: (Square, Square) = (Square::new(2, 0), Square::new(6, 0));
 pub(crate) const CASTLING_SQUARES_BLACK: (Square, Square) = (Square::new(2, 7), Square::new(6, 7));
+const PROMOTION_RANK: [u8; 2] = [7, 0];
 
 pub struct LegalMoveData {
     pub legal_moves: Vec<Move>,
@@ -53,24 +54,24 @@ impl Board {
         for sqr in self.piece_bbs[self.active_player][PieceType::Rook] {
             let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         for sqr in self.piece_bbs[self.active_player][PieceType::Bishop] {
             let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         for sqr in self.piece_bbs[self.active_player][PieceType::Queen] {
             let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         for sqr in self.piece_bbs[self.active_player][PieceType::Knight] {
             if pin_mask.is_set(sqr) {
                 continue;
             }
             let move_mask = KNIGHT_MOVES[sqr] & !self.color_bbs[self.active_player] & allowed_mask;
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         let ep_mask = self.en_passant_square
             .map(| sqr| BitBoard::from(sqr))
@@ -79,18 +80,25 @@ impl Board {
             for sqr in self.piece_bbs[White][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                self.create_pawn_moves(sqr, move_mask, &mut moves);
             }
         }
         else {
             for sqr in self.piece_bbs[Black][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                self.create_pawn_moves(sqr, move_mask, &mut moves);
+                // moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
             }
         }
-        let move_mask = self.generate_king_moves(king_square, king_danger_squares) & !king_danger_squares & allowed_mask;
-        moves.append(&mut self.moves_from_target_bitboard(king_square, move_mask));
+        //Normal king moves
+        let move_mask = self.generate_king_moves(king_square, king_danger_squares) & allowed_mask;
+        self.create_other_moves(king_square, move_mask, &mut moves);
+
+        //King castle moves
+        let move_mask = self.generate_king_castle_moves(king_square, king_danger_squares) & allowed_mask;
+        self.create_king_castle_moves(king_square, move_mask, &mut moves);
+
 
         LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask }
     }
@@ -104,7 +112,7 @@ impl Board {
         let mut moves: Vec<Move> = vec!();
 
         let evasive_king_moves = KING_MOVES[king_square] & !king_danger_squares & !self.color_bbs[self.active_player] & allowed_mask;
-        moves.append(&mut self.moves_from_target_bitboard(king_square, evasive_king_moves));
+        self.create_other_moves(king_square, evasive_king_moves, &mut moves);
 
         //Double check, the king can only run away
         let attackers = self.generate_attacker_squares(king_square);
@@ -148,24 +156,24 @@ impl Board {
         for sqr in self.piece_bbs[self.active_player][Rook] {
             let mut move_mask = self.generate_rook_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         for sqr in self.piece_bbs[self.active_player][Bishop] {
             let mut move_mask = self.generate_bishop_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         for sqr in self.piece_bbs[self.active_player][Queen] {
             let mut move_mask = self.generate_queen_moves_ks(sqr, self.active_player) & check_prevention_mask & allowed_mask;
             move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         for sqr in self.piece_bbs[self.active_player][Knight] {
             if pin_mask.is_set(sqr) {
                 continue;
             }
             let move_mask = KNIGHT_MOVES[sqr] & !self.color_bbs[self.active_player] & check_prevention_mask & allowed_mask;
-            moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+            self.create_other_moves(sqr, move_mask, &mut moves);
         }
         let ep_mask = self.en_passant_square
             .map(| sqr| BitBoard::from(sqr))
@@ -175,20 +183,21 @@ impl Board {
             for sqr in self.piece_bbs[White][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_white(sqr, ep_mask) & pawn_check_prevention_mask & pawn_allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                self.create_pawn_moves(sqr, move_mask, &mut moves);
             }
         }
         else {
             for sqr in self.piece_bbs[Black][Pawn] {
                 let mut move_mask = self.generate_pawn_moves_squares_black(sqr, ep_mask) & pawn_check_prevention_mask & pawn_allowed_mask;
                 move_mask &= Board::calculate_partial_pin_mask(sqr, king_square, pin_mask);
-                moves.append(&mut self.moves_from_target_bitboard(sqr, move_mask));
+                self.create_pawn_moves(sqr, move_mask, &mut moves);
             }
         }
 
         LegalMoveData { legal_moves: moves, king_danger_mask: king_danger_squares, pin_mask }
     }
 
+    //Pieces can always move on the line between itself and the king, even if they are pinned.
     fn calculate_partial_pin_mask(piece_square: Square, king_square: Square, pin_mask: BitBoard) -> BitBoard {
         if pin_mask.is_set(piece_square) {
             match king_square.direction_between(&piece_square) {
@@ -252,8 +261,8 @@ impl Board {
         push_mask | (PAWN_CAPTURE_MOVES_BLACK[sqr] & (self.color_bbs[White] | ep_mask))
     }
 
-    fn generate_king_moves(&self, sqr: Square, king_danger_squares: BitBoard) -> BitBoard {
-        let mut king_moves = KING_MOVES[sqr] & !self.color_bbs[self.active_player];
+    fn generate_king_castle_moves(&self, sqr: Square, king_danger_squares: BitBoard) -> BitBoard {
+        let mut king_moves = BitBoard::NONE;
         let no_castle_squares = king_danger_squares | (self.occupied() ^ self.piece_bbs[White][King] ^ self.piece_bbs[Black][King]);
         if let (Some(c_square), _) = self.current_castle_options() {
             let rook_passing_square = Square::new((c_square.file() as isize + sqr.direction_between(&c_square).0) as u8, c_square.rank());
@@ -269,194 +278,30 @@ impl Board {
         king_moves
     }
 
+    fn generate_king_moves(&self, sqr: Square, king_danger_squares: BitBoard) -> BitBoard {
+        KING_MOVES[sqr] & !self.color_bbs[self.active_player] & !king_danger_squares
+    }
+
     fn generate_pin_mask(&self, sqr: Square, pinned_color: Color) -> BitBoard {
-        self.generate_pin_mask_rq(sqr, pinned_color) | self.generate_pin_mask_bq(sqr, pinned_color)
+        self.generate_pin_mask_rq_ks(sqr, pinned_color) | self.generate_pin_mask_bq_ks(sqr, pinned_color)
     }
 
-    fn generate_pin_mask_rq(&self, sqr: Square, pinned_color: Color) -> BitBoard {
-        let mut pin_squares = BitBoard(0);
-        let mut first_hit = true;
-        let mut pin_squares_ray = BitBoard(0);
-        for n in (sqr.file() + 1)..8 {
-            let sq = Square::new(n, sqr.rank());
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        first_hit = true;
-        pin_squares_ray = BitBoard(0);
-        for n in (0..sqr.file()).rev() {
-            let sq = Square::new(n, sqr.rank());
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        first_hit = true;
-        pin_squares_ray = BitBoard(0);
-        for n in (sqr.rank() + 1)..8 {
-            let sq = Square::new(sqr.file(), n);
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        first_hit = true;
-        pin_squares_ray = BitBoard(0);
-        for n in (0..sqr.rank()).rev() {
-            let sq = Square::new(sqr.file(), n);
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Rook) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        pin_squares
+    fn generate_pin_mask_rq_ks(&self, sqr: Square, pinned_color: Color) -> BitBoard {
+        let rook_lines = self.ks_rook_moves(!self.occupied(), BitBoard::from(sqr));
+        let pinned_pieces = rook_lines & self.color_bbs[pinned_color];
+        let rook_lines = self.ks_rook_moves(!self.occupied() ^ pinned_pieces, BitBoard::from(sqr));
+        let pinning_pieces = rook_lines & (self.piece_bbs[!pinned_color][Rook] | self.piece_bbs[!pinned_color][Queen]);
+        let pinned_pieces =  self.ks_rook_moves(!BitBoard::from(sqr), pinning_pieces) & pinned_pieces;
+        return pinned_pieces
     }
 
-    fn generate_pin_mask_bq(&self, sqr: Square, pinned_color: Color) -> BitBoard {
-        let mut pin_squares = BitBoard(0);
-        let mut first_hit = true;
-        let mut pin_squares_ray = BitBoard(0);
-        let rank = sqr.rank();
-        let file = sqr.file();
-        let min = min(rank, file);
-        let max = max(rank, file);
-        for n in 1..8 {
-            if max + n >= 8 {
-                break;
-            }
-            let sq = Square::new(sqr.file() + n, sqr.rank() + n);
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        first_hit = true;
-        pin_squares_ray = BitBoard(0);
-        for n in 1..8 {
-            if min < n {
-                break;
-            }
-            let sq = Square::new(sqr.file() - n, sqr.rank() - n);
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        first_hit = true;
-        pin_squares_ray = BitBoard(0);
-        for n in 1..8 {
-            if rank < n || file + n >= 8 {
-                break;
-            }
-            let sq = Square::new(sqr.file() + n, sqr.rank() - n);
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        first_hit = true;
-        pin_squares_ray = BitBoard(0);
-        for n in 1..8 {
-            if file < n || rank + n >= 8 {
-                break;
-            }
-            let sq = Square::new(sqr.file() - n, sqr.rank() + n);
-            if let Some(Piece{piece_type, color}) = self.board[sq] {
-                if color != pinned_color {
-                    if !first_hit && (piece_type == Queen || piece_type == Bishop) {
-                        pin_squares |= pin_squares_ray;
-                    }
-                    break;
-                }
-                else if first_hit {
-                    first_hit = false;
-                    pin_squares_ray |= sq;
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        pin_squares
+    fn generate_pin_mask_bq_ks(&self, sqr: Square, pinned_color: Color) -> BitBoard {
+        let bishop_lines = self.ks_bishop_moves(!self.occupied(), BitBoard::from(sqr));
+        let pinned_pieces = bishop_lines & self.color_bbs[pinned_color];
+        let bishop_lines = self.ks_bishop_moves(!self.occupied() ^ pinned_pieces, BitBoard::from(sqr));
+        let pinning_pieces = bishop_lines & (self.piece_bbs[!pinned_color][Bishop] | self.piece_bbs[!pinned_color][Queen]);
+        let pinned_pieces =  self.ks_bishop_moves(!BitBoard::from(sqr), pinning_pieces) & pinned_pieces;
+        return pinned_pieces
     }
 
     fn generate_attacker_squares(&self, king_sqr: Square) -> BitBoard {
@@ -493,243 +338,56 @@ impl Board {
         danger_mask | self.ks_bishop_moves(!occlusion_mask, self.piece_bbs[opp_c][Bishop] | self.piece_bbs[opp_c][Queen])
     }
 
-    pub fn ks_rook_moves(&self, propagate_mask: BitBoard, rook_sliders: BitBoard) -> BitBoard {
-        unsafe {
-            Board::kogge_stone_north_east(rook_sliders, propagate_mask) | Board::kogge_stone_south_west(rook_sliders, propagate_mask)
+    pub fn create_king_castle_moves(&self, from: Square, mut possible_targets: BitBoard, moves: &mut Vec<Move>) {
+        for to in possible_targets {
+            let rook_target = Square(((to.0 as isize - from.0 as isize).signum() + from.0 as isize) as u8);
+            let move_type = MoveAction::Castle(rook_target);
+            moves.push(Move { from, to, move_type, previous_ep_square: self.en_passant_square });
         }
     }
 
-    pub fn ks_bishop_moves(&self, propagate_mask: BitBoard, bishop_sliders: BitBoard) -> BitBoard {
-        unsafe {
-            Board::kogge_stone_north_ew(bishop_sliders, propagate_mask) | Board::kogge_stone_south_ew(bishop_sliders, propagate_mask)
-        }
-    }
-
-    pub fn ks_queen_moves(&self, propagate_mask: BitBoard, queen_sliders: BitBoard) -> BitBoard {
-        unsafe {
-            Board::kogge_stone_rshift_avx2(queen_sliders, propagate_mask) | Board::kogge_stone_lshift_avx2(queen_sliders, propagate_mask)
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    unsafe fn kogge_stone_rshift_avx2(gen: BitBoard, pro: BitBoard) -> BitBoard {
-        let s1 = _mm256_set_epi64x(8, 1, 7, 9);
-        let s2 = _mm256_set_epi64x(16, 2, 14, 18);
-        let s3 = _mm256_set_epi64x(32, 4, 28, 36);
-        let file_mask = _mm256_set_epi64x(-1 , !FILES[7].0 as i64, !FILES[0].0 as i64, !FILES[7].0 as i64);
-
-        let mut gen = _mm256_set_epi64x(gen.0 as i64, gen.0 as i64, gen.0 as i64, gen.0 as i64);
-        let mut pro = _mm256_set_epi64x(pro.0 as i64, pro.0 as i64, pro.0 as i64, pro.0 as i64);
-        pro = _mm256_and_si256(pro, file_mask);
-
-        gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_srlv_epi64(gen, s1)));
-        pro = _mm256_and_si256(pro, _mm256_srlv_epi64(pro, s1));
-        gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_srlv_epi64(gen, s2)));
-        pro = _mm256_and_si256(pro, _mm256_srlv_epi64(pro, s2));
-        gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_srlv_epi64(gen, s3)));
-
-        gen = _mm256_and_si256(_mm256_srlv_epi64(gen, s1), file_mask);
-
-        let mut back_key = [0u64; 4];
-        _mm256_storeu_si256(back_key.as_mut_ptr() as *mut __m256i, gen);
-        BitBoard(back_key[0] | back_key[1] | back_key[2] | back_key[3])
-    }
-
-    #[target_feature(enable = "avx2")]
-    unsafe fn kogge_stone_lshift_avx2(gen: BitBoard, pro: BitBoard) -> BitBoard {
-        let s1 = _mm256_set_epi64x(8, 1, 7, 9);
-        let s2 = _mm256_set_epi64x(16, 2, 14, 18);
-        let s3 = _mm256_set_epi64x(32, 4, 28, 36);
-        let file_mask = _mm256_set_epi64x(-1, !FILES[0].0 as i64, !FILES[7].0 as i64, !FILES[0].0 as i64);
-
-        let mut gen = _mm256_set_epi64x(gen.0 as i64, gen.0 as i64, gen.0 as i64, gen.0 as i64);
-        let mut pro = _mm256_set_epi64x(pro.0 as i64, pro.0 as i64, pro.0 as i64, pro.0 as i64);
-        pro = _mm256_and_si256(pro, file_mask);
-
-        gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_sllv_epi64(gen, s1)));
-        pro = _mm256_and_si256(pro, _mm256_sllv_epi64(pro, s1));
-        gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_sllv_epi64(gen, s2)));
-        pro = _mm256_and_si256(pro, _mm256_sllv_epi64(pro, s2));
-        gen = _mm256_or_si256(gen, _mm256_and_si256(pro, _mm256_sllv_epi64(gen, s3)));
-
-        gen = _mm256_and_si256(_mm256_sllv_epi64(gen, s1), file_mask);
-
-        let mut back_key = [0u64; 4];
-        _mm256_storeu_si256(back_key.as_mut_ptr() as *mut __m256i, gen);
-        BitBoard(back_key[0] | back_key[1] | back_key[2] | back_key[3])
-    }
-
-
-    #[target_feature(enable = "avx2")]
-    unsafe fn kogge_stone_south_west(gen: BitBoard, pro: BitBoard) -> BitBoard {
-        let s1 = _mm_set_epi64x(8, 1);
-        let s2 = _mm_set_epi64x(16, 2);
-        let s3 = _mm_set_epi64x(32, 4);
-        let file_mask = _mm_set_epi64x(-1 , !FILES[7].0 as i64);
-
-        let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
-        let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
-        pro = _mm_and_si128(pro, file_mask);
-
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s1)));
-        pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s1));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s2)));
-        pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s2));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s3)));
-
-        gen = _mm_and_si128(_mm_srlv_epi64(gen, s1), file_mask);
-
-        let mut back_key = [0u64; 2];
-        _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
-        BitBoard(back_key[0] | back_key[1])
-    }
-
-    #[target_feature(enable = "avx2")]
-    unsafe fn kogge_stone_north_east(gen: BitBoard, pro: BitBoard) -> BitBoard {
-        let s1 = _mm_set_epi64x(8, 1);
-        let s2 = _mm_set_epi64x(16, 2);
-        let s3 = _mm_set_epi64x(32, 4);
-        let file_mask = _mm_set_epi64x(-1 , !FILES[0].0 as i64);
-
-        let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
-        let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
-        pro = _mm_and_si128(pro, file_mask);
-
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s1)));
-        pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s1));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s2)));
-        pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s2));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s3)));
-
-        gen = _mm_and_si128(_mm_sllv_epi64(gen, s1), file_mask);
-
-        let mut back_key = [0u64; 2];
-        _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
-        BitBoard(back_key[0] | back_key[1])
-    }
-
-    #[target_feature(enable = "avx2")]
-    unsafe fn kogge_stone_south_ew(gen: BitBoard, pro: BitBoard) -> BitBoard {
-        let s1 = _mm_set_epi64x(7, 9);
-        let s2 = _mm_set_epi64x(14,  18);
-        let s3 = _mm_set_epi64x(28, 36);
-        let file_mask = _mm_set_epi64x(!FILES[0].0 as i64 , !FILES[7].0 as i64);
-
-        let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
-        let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
-        pro = _mm_and_si128(pro, file_mask);
-
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s1)));
-        pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s1));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s2)));
-        pro = _mm_and_si128(pro, _mm_srlv_epi64(pro, s2));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_srlv_epi64(gen, s3)));
-
-        gen = _mm_and_si128(_mm_srlv_epi64(gen, s1), file_mask);
-
-        let mut back_key = [0u64; 2];
-        _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
-        BitBoard(back_key[0] | back_key[1])
-    }
-
-    #[target_feature(enable = "avx2")]
-    unsafe fn kogge_stone_north_ew(gen: BitBoard, pro: BitBoard) -> BitBoard {
-        let s1 = _mm_set_epi64x(7, 9);
-        let s2 = _mm_set_epi64x(14,  18);
-        let s3 = _mm_set_epi64x(28, 36);
-        let file_mask = _mm_set_epi64x(!FILES[7].0 as i64 , !FILES[0].0 as i64);
-
-        let mut gen = _mm_set_epi64x(gen.0 as i64, gen.0 as i64);
-        let mut pro = _mm_set_epi64x(pro.0 as i64, pro.0 as i64);
-        pro = _mm_and_si128(pro, file_mask);
-
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s1)));
-        pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s1));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s2)));
-        pro = _mm_and_si128(pro, _mm_sllv_epi64(pro, s2));
-        gen = _mm_or_si128(gen, _mm_and_si128(pro, _mm_sllv_epi64(gen, s3)));
-
-        gen = _mm_and_si128(_mm_sllv_epi64(gen, s1), file_mask);
-
-        let mut back_key = [0u64; 2];
-        _mm_store_si128(back_key.as_mut_ptr() as *mut __m128i, gen);
-        BitBoard(back_key[0] | back_key[1])
-    }
-
-    fn generate_rook_moves_ks(&self, sqr: Square, rook_color: Color) -> BitBoard {
-        self.ks_rook_moves(!self.occupied(), BitBoard::from(sqr)) & !self.color_bbs[rook_color]
-    }
-
-    fn generate_bishop_moves_ks(&self, sqr: Square, bishop_color: Color) -> BitBoard {
-        self.ks_bishop_moves(!self.occupied(), BitBoard::from(sqr)) & !self.color_bbs[bishop_color]
-    }
-
-    fn generate_queen_moves_ks(&self, sqr: Square, queen_color: Color) -> BitBoard {
-        self.ks_queen_moves(!self.occupied(), BitBoard::from(sqr)) & !self.color_bbs[queen_color]
-    }
-
-    fn moves_from_target_bitboard(&self, from: Square, mut possible_targets: BitBoard) -> Vec<Move> {
-        let mut moves: Vec<Move> = vec!();
-        while possible_targets != 0 {
-            let move_id = possible_targets.0.trailing_zeros();
-            let to = Square(move_id as u8);
-            possible_targets = possible_targets.toggle(to);
-            self.create_moves(from, to, &mut moves);
-        }
-        moves
-    }
-
-    pub fn create_moves(&self, from: Square, to: Square, moves: &mut Vec<Move>) {
+    pub fn create_pawn_moves(&self, from: Square, mut possible_targets: BitBoard, moves: &mut Vec<Move>) {
         let from_piece = self.board[from].expect("From piece must exist");
-        match self.board[to] {
-            Some(Piece{piece_type, color: _}) => match from_piece.piece_type {
-                PieceType::Pawn if (from_piece.color == White && to.rank() == 7) || (from_piece.color == Black && to.rank() == 0) => {
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Queen, Some(piece_type)), previous_ep_square: self.en_passant_square });
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Knight, Some(piece_type)), previous_ep_square: self.en_passant_square });
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Rook, Some(piece_type)), previous_ep_square: self.en_passant_square });
-                    moves.push(Move { from, to, move_type: MoveAction::Promotion(Bishop, Some(piece_type)), previous_ep_square: self.en_passant_square });
-                }
-                _ => moves.push(Move { from, to, move_type: MoveAction::Capture(piece_type), previous_ep_square: self.en_passant_square })
-            },
-            None => match from_piece.piece_type {
-                PieceType::Pawn => match self.en_passant_square {
-                    Some(ep_sqr) if ep_sqr == to => {
-                        let king_square = Square(self.piece_bbs[self.active_player][King].0.trailing_zeros() as u8);
-                        if king_square.rank() == from.rank() {
-                            let attacker_dir = king_square.direction_between(&from);
-                            let mut file = king_square.file() as isize + attacker_dir.0;
-                            while file < 8 && file >= 0 {
-                                if file == to.file() as isize || file == from.file() as isize {
-                                    file += attacker_dir.0;
-                                    continue;
+        for to in possible_targets {
+            //Promotion
+            if PROMOTION_RANK[from_piece.color] == to.rank() {
+                let captured_opt = self.board[to].map(|p|p.piece_type);
+                moves.push(Move { from, to, move_type: MoveAction::Promotion(Queen, captured_opt), previous_ep_square: self.en_passant_square });
+                moves.push(Move { from, to, move_type: MoveAction::Promotion(Rook, captured_opt), previous_ep_square: self.en_passant_square });
+                moves.push(Move { from, to, move_type: MoveAction::Promotion(Knight, captured_opt), previous_ep_square: self.en_passant_square });
+                moves.push(Move { from, to, move_type: MoveAction::Promotion(Bishop, captured_opt), previous_ep_square: self.en_passant_square });
+            }
+            else {
+                match self.board[to] {
+                    Some(Piece{piece_type, ..}) => moves.push(Move { from, to, move_type: MoveAction::Capture(piece_type), previous_ep_square: self.en_passant_square }),
+                    None => {
+                        match self.en_passant_square {
+                            Some(ep_sqr) if ep_sqr == to => {
+                                let ep_pawn_square = Square::new(ep_sqr.file(), from.rank());
+                                let free_without_ep_pawns = !self.occupied() ^ from ^ ep_pawn_square;
+                                let ep_xray_pieces = self.piece_bbs[!self.active_player][Queen] | self.piece_bbs[!self.active_player][Rook];
+                                let ep_xray_test = self.ks_rook_moves(free_without_ep_pawns, ep_xray_pieces);
+                                let king_square = Square(self.piece_bbs[self.active_player][King].0.trailing_zeros() as u8);
+                                if ep_xray_test & king_square == 0 {
+                                    moves.push(Move { from, to, move_type: MoveAction::EnPassant, previous_ep_square: self.en_passant_square })
                                 }
-                                match self.board[Square::new(file as u8, king_square.rank())] {
-                                    None => file += attacker_dir.0,
-                                    Some(Piece{color, piece_type: Rook }) | Some(Piece{color, piece_type: Queen }) if color == !self.active_player => return,
-                                    _ => break
-                                }
-                            }
+                            },
+                            _ => moves.push(Move { from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square })
                         }
-                        moves.push(Move { from, to, move_type: MoveAction::EnPassant, previous_ep_square: self.en_passant_square })
-                    },
-                    _ if (from_piece.color == White && to.rank() == 7) || (from_piece.color == Black && to.rank() == 0) => {
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Queen, None), previous_ep_square: self.en_passant_square });
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Knight, None), previous_ep_square: self.en_passant_square });
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Rook, None), previous_ep_square: self.en_passant_square });
-                        moves.push(Move { from, to, move_type: MoveAction::Promotion(Bishop, None), previous_ep_square: self.en_passant_square });
                     }
-                    _ => moves.push(Move { from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square}),
-                },
-                PieceType::King => match self.current_castle_options() {
-                    (Some(castle_sqr), _) if to == castle_sqr && castle_sqr.rank() == 0 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(3, 0)), previous_ep_square: self.en_passant_square}),
-                    (Some(castle_sqr), _) if to == castle_sqr && castle_sqr.rank() == 7 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(3, 7)), previous_ep_square: self.en_passant_square}),
-                    (_, Some(castle_sqr)) if to == castle_sqr && castle_sqr.rank() == 0 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(5, 0)), previous_ep_square: self.en_passant_square}),
-                    (_, Some(castle_sqr)) if to == castle_sqr && castle_sqr.rank() == 7 => moves.push(Move{from, to, move_type: MoveAction::Castle(Square::new(5, 7)), previous_ep_square: self.en_passant_square}),
-                    _ => moves.push(Move{from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square})
                 }
-                _ => moves.push(Move{from, to, move_type: MoveAction::Normal, previous_ep_square: self.en_passant_square})
-            },
-        };
+            }
+        }
+    }
+
+    pub fn create_other_moves(&self, from: Square, mut possible_targets: BitBoard, moves: &mut Vec<Move>) {
+        for to in possible_targets {
+            let action = match self.board[to] {
+                Some(Piece{piece_type, ..}) => MoveAction::Capture(piece_type),
+                None => MoveAction::Normal
+            };
+            moves.push(Move{from, to, move_type: action, previous_ep_square: self.en_passant_square});
+        }
     }
 
     fn current_castle_options(&self) -> (Option<Square>, Option<Square>) {

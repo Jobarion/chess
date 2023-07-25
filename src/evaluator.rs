@@ -207,7 +207,7 @@ impl AlphaBetaSearch {
             return MoveSuggestion(Stalemate, None);
         }
 
-        let alphaOriginal = alpha;
+        let alpha_original = alpha;
 
         if let Some(tt_entry) = meta.tt_table.retrieve(board.zobrist_key) {
             if tt_entry.depth >= depth {
@@ -219,7 +219,7 @@ impl AlphaBetaSearch {
                     NodeType::UpperBound => {
                         beta = min(beta, tt_entry.eval);
                     },
-                    _ => unreachable!("Undefined node type in TT")
+                    _ => ()
                 }
                 if alpha >= beta {
                     return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move));
@@ -260,7 +260,7 @@ impl AlphaBetaSearch {
         }
 
         if let Some(MoveSuggestion(eval, Some(best_move))) = max_suggestion {
-            let flag = if eval <= alphaOriginal {
+            let flag = if eval <= alpha_original {
                 NodeType::UpperBound
             } else if eval >= beta {
                 NodeType::LowerBound
