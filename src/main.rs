@@ -4,7 +4,7 @@ use std::error::Error;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use clap::{arg, command, value_parser};
 use itertools::Itertools;
 use crate::bitboard::BitBoard;
@@ -43,7 +43,11 @@ async fn main() {
         .subcommand(command!("perft")
             .arg(arg!(--fen <FEN> "FEN string").default_value("startpos"))
             .arg(arg!(--depth <DEPTH> "Perft depth").value_parser(value_parser!(u8)).required(true))
-            .arg(arg!(--hash <HASH_SIZE> "Hash table size in MB").value_parser(value_parser!(usize)).default_value("0"))
+            .arg(arg!(--hash <HASH_SIZE> "Hash table size in MB").value_parser(value_parser!(usize)).default_value("32"))
+        )
+        .subcommand(command!("bench")
+            .arg(arg!(--fen <FEN> "FEN string").default_value("startpos"))
+            .arg(arg!(--hash <HASH_SIZE> "Hash table size in MB").value_parser(value_parser!(usize)).default_value("32"))
         )
         .get_matches();
 
@@ -60,6 +64,11 @@ async fn main() {
             let depth = sub_matches.get_one::<u8>("depth").unwrap();
             let hash_size = sub_matches.get_one::<usize>("hash").unwrap();
             run_perft(fen.as_str(), *depth, *hash_size);
+        },
+        Some(("bench", sub_matches)) => {
+            let fen = sub_matches.get_one::<String>("fen").unwrap();
+            let hash_size = sub_matches.get_one::<usize>("hash").unwrap();
+            run_bench(fen.as_str(), *hash_size);
         },
         Some(("lichess", sub_matches)) => {
             let token = sub_matches.get_one::<String>("token").unwrap();
@@ -119,7 +128,7 @@ async fn main() {
     // let mut board = Board::from_fen("5rkr/qqqq2Q1/8/5B2/5N2/5B2/P4N2/KB4Q1 b - - 0 3".to_string()).unwrap();
     // println!("{:?}", board.legal_moves());
     // // //
-    // for piece_move in board.legal_moves().legal_moves {
+    // for piece_move in board.legal_moves(MoveType::All).legal_moves {
     //     println!("=== {} ===", piece_move.to_uci());
     //     board.apply_move(&piece_move);
     //     // let legal_next = board.legal_moves();
@@ -155,6 +164,14 @@ fn run_eval(fen: &str, time_seconds: u32, hash_size: usize, uci_only: bool) {
 fn run_perft(fen: &str, depth: u8, hash_size: usize) {
     let mut board = Board::from_fen(fen).unwrap();
     println!("{}", board.perft(depth, hash_size));
+}
+
+fn run_bench(fen: &str, hash_size: usize) {
+    let mut board = Board::from_fen(fen).unwrap();
+    for d in 1_u8.. {
+        let start = Instant::now();
+        println!("Perft {} {:?} in {}.{}s", d, board.perft(d, hash_size), start.elapsed().as_secs(), start.elapsed().as_millis() % 1000);
+    }
 }
 
 async fn run_lichess(token: String, whitelist: Vec<String>, hash_size: usize) -> Result<(), Box<dyn Error + Send + Sync>> {
