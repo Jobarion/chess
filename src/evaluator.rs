@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use itertools::{Itertools};
+use crate::{BitBoard, Square};
 
 use crate::board::board::{Board, GamePhase};
 use crate::Color::*;
@@ -47,7 +48,7 @@ const PIECE_VALUE_MG_EG_TRANSITION_END: u32 = ((PIECE_VALUE_MG[1] + PIECE_VALUE_
 const PIECE_VALUE_MG_EG_TRANSITION_START: u32 = ((PIECE_VALUE_MG[1] + PIECE_VALUE_MG[2] + PIECE_VALUE_MG[3] + PIECE_VALUE_MG[4]) / 4 * 6 + PIECE_VALUE_EG[5] * 5) * 2;
 
 pub const PIECE_VALUE: [[u32; 6]; 2] = [PIECE_VALUE_MG, PIECE_VALUE_EG];
-
+const CENTER_MANHATTAN_DISTANCE: [i16; 64] = [6,5,4,3,3,4,5,6,5,4,3,2,2,3,4,5,4,3,2,1,1,2,3,4,3,2,1,0,0,1,2,3,3,2,1,0,0,1,2,3,4,3,2,1,1,2,3,4,5,4,3,2,2,3,4,5,6,5,4,3,3,4,5,6];
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Evaluation {
@@ -127,6 +128,7 @@ pub fn eval_position_direct(board: &Board) -> Evaluation {
         progress / diff
     };
     let mg_ratio = 1_f32 - eg_ratio;
+    let is_endgame = (1_f32 - eg_ratio).abs() <= 0.01_f32;
 
     let material_eval_mg: i32 = material_white_mg as i32 - material_black_mg as i32;
     let material_eval_eg: i32 = board.eval_info[GamePhase::Endgame].material[White] as i32 - board.eval_info[GamePhase::Endgame].material[Black] as i32;
@@ -138,6 +140,26 @@ pub fn eval_position_direct(board: &Board) -> Evaluation {
     let pst_eval = pst_eval_mg as f32 * mg_ratio + pst_eval_eg as f32 * eg_ratio;
 
     let mut eval = material_eval + pst_eval;
+
+    if is_endgame {
+        //If we are a rook up, push the king into the corner.
+        //TODO if we have a bishop use the correct corner
+        let (king_to_mate, factor) = if board.eval_info[GamePhase::Endgame].material[White] == PIECE_VALUE_EG[King] && board.eval_info[GamePhase::Endgame].material[Black] >= PIECE_VALUE_EG[Rook] {
+            (board.piece_bbs[White][King], -1)
+        }
+        else if board.eval_info[GamePhase::Endgame].material[Black] == PIECE_VALUE_EG[King] && board.eval_info[GamePhase::Endgame].material[White] >= PIECE_VALUE_EG[Rook] {
+            (board.piece_bbs[Black][King], 1)
+        } else {
+            (BitBoard::NONE, 0)
+        };
+        if king_to_mate != 0 {
+            let distance_to_center = CENTER_MANHATTAN_DISTANCE[king_to_mate.0.trailing_zeros() as usize];
+            let king_to_corner_eval = distance_to_center * factor * 100;
+            eval += king_to_corner_eval as f32;
+        }
+
+    }
+
     if board.active_player == Black {
         eval = -eval;
     }

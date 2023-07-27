@@ -24,6 +24,7 @@ mod iter_deep;
 mod hashing;
 mod movegen;
 mod kogge_stone;
+mod syzygy;
 
 #[tokio::main]
 async fn main() {
