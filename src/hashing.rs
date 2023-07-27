@@ -130,6 +130,7 @@ pub enum NodeType {
 #[derive(Copy, Clone)]
 pub struct AlphaBetaData {
     pub depth: u8,
+    pub ply: u8,
     pub node_type: NodeType,
     pub eval: Evaluation,
     pub best_move: Move,
@@ -146,7 +147,8 @@ impl IHashData for AlphaBetaData {
                 to: Square(0),
                 move_type: MoveAction::Normal,
                 previous_ep_square: None,
-            }
+            },
+            ply: 0
         }
     }
 
@@ -157,12 +159,13 @@ impl IHashData for AlphaBetaData {
 
 impl AlphaBetaData {
 
-    pub fn create(depth: u8, node_type: NodeType, eval: Evaluation, best_move: Move) -> AlphaBetaData {
+    pub fn create(depth: u8, node_type: NodeType, eval: Evaluation, best_move: Move, ply: u8) -> AlphaBetaData {
         AlphaBetaData {
             depth,
             node_type,
             eval,
-            best_move
+            best_move,
+            ply
         }
     }
 }

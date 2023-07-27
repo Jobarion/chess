@@ -153,7 +153,7 @@ pub mod board {
 
         pub fn is_stalemate(&self) -> bool {
             let repetitions = *self.state_map.get(&self.zobrist_key).unwrap_or(&0);
-            self.halfmove_clock >= 50 || repetitions >= 3
+            self.halfmove_clock >= 100 || repetitions >= 3
         }
 
         pub fn rehash(&self) -> ZobristHash {

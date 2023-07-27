@@ -1,12 +1,23 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use crate::{Board, AlphaBetaSearch, MoveSuggestion};
-use crate::evaluator::MinMaxMetadata;
+use crate::{Board, AlphaBetaSearch, MoveSuggestion, MoveType};
+use crate::evaluator::{Evaluation, MinMaxMetadata};
 use crate::hashing::{AlphaBetaData, TranspositionTable};
 
 const MAX_DEPTH: u8 = 100;
 const START_DEPTH: u8 = 2;
 
 pub fn eval_iter_deep(mut board: &mut Board, end_time: u128, hash_size: usize, conserve_time: bool, quiet: bool) -> Option<MoveSuggestion> {
+    let legal_moves = board.legal_moves(MoveType::All).legal_moves;
+    if legal_moves.len() <= 1 {
+        if legal_moves.len() == 1 {
+            return Some(MoveSuggestion(Evaluation::Estimate(f32::NAN), Some(legal_moves[0])))
+        }
+        else {
+            let mut dummy_table = TranspositionTable::<AlphaBetaData>::new(0);
+            let eval = AlphaBetaSearch::find_move(&mut board, 1, &mut MinMaxMetadata::new(end_time, &mut dummy_table));
+            return Some(eval);
+        }
+    }
     let mut best_move: Option<MoveSuggestion> = None;
     let mut previous_elapsed = 0_u128;
     let mut tt_table = TranspositionTable::<AlphaBetaData>::new(hash_size);

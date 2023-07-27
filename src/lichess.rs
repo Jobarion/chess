@@ -101,7 +101,7 @@ impl LichessBot {
             // println!("Event loop, event = {:?}", event);
             match event {
                 Challenge{challenge: ChallengeData{id, challenger, variant}} => {
-                    if variant.key.eq("standard") && (self.whitelist.is_empty() || self.whitelist.contains(&challenger.id)) {
+                    if (variant.key.eq("standard") || variant.key.eq("fromPosition")) && (self.whitelist.is_empty() || self.whitelist.contains(&challenger.id)) {
                         self.accept_challenge(id).await?;
                     } else {
                         self.decline_challenge(id).await?;
@@ -255,10 +255,10 @@ impl LichessBot {
         Ok(())
     }
 
-    fn calc_move_time(us_time: u64, them_time: u64, us_inc: u64, _them_inc: u64) -> u64 {
-        if us_time >= 1_000_000 {
-            return 20 * 1000;
-        }
+    fn calc_move_time(mut us_time: u64, mut them_time: u64, us_inc: u64, _them_inc: u64) -> u64 {
+        us_time = min(5_000_000, us_time);
+        them_time = min(5_000_000, them_time);
+
         if them_time > us_time {
             //Expect the game to take 30 more moves (incl. incr).
             //If time is low and increment high, just take half of our time and live of increment.

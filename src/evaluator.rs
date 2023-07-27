@@ -210,19 +210,24 @@ impl AlphaBetaSearch {
         let alpha_original = alpha;
 
         if let Some(tt_entry) = meta.tt_table.retrieve(board.zobrist_key) {
+            let tt_eval = match tt_entry.eval {
+                Losing(x) => Losing(x + meta.ply - tt_entry.ply),
+                Winning(x) => Losing(x + meta.ply - tt_entry.ply),
+                x=> x
+            };
             if tt_entry.depth >= depth {
                 match tt_entry.node_type {
-                    NodeType::Exact => return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move)),
+                    NodeType::Exact => return MoveSuggestion(tt_eval, Some(tt_entry.best_move)),
                     NodeType::LowerBound => {
-                        alpha = max(alpha, tt_entry.eval);
+                        alpha = max(alpha, tt_eval);
                     },
                     NodeType::UpperBound => {
-                        beta = min(beta, tt_entry.eval);
+                        beta = min(beta, tt_eval);
                     },
                     _ => ()
                 }
                 if alpha >= beta {
-                    return MoveSuggestion(tt_entry.eval, Some(tt_entry.best_move));
+                    return MoveSuggestion(tt_eval, Some(tt_entry.best_move));
                 }
             }
         }
@@ -268,7 +273,7 @@ impl AlphaBetaSearch {
                 NodeType::Exact
             };
 
-            meta.tt_table.store(AlphaBetaData::create(depth, flag, eval, best_move), board.zobrist_key);
+            meta.tt_table.store(AlphaBetaData::create(depth, flag, eval, best_move, meta.ply), board.zobrist_key);
         }
 
         max_suggestion.unwrap_or_else(|| {
