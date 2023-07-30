@@ -15,7 +15,7 @@ use crate::Color::*;
 use crate::evaluator::Evaluation::{Estimate, Winning, Losing, Stalemate};
 use crate::hashing::{AlphaBetaData, NodeType, TranspositionTable, ZobristHash};
 use crate::movegen::{LegalMoveData, MoveType};
-use crate::piece::{Move, MoveAction, PieceType};
+use crate::piece::{Color, Move, MoveAction, PieceType};
 
 use crate::piece::PieceType::*;
 
@@ -44,11 +44,42 @@ pub const PST: [[[i16; 64]; 6]; 2] = [
 const PIECE_VALUE_MG: [u32; 6] = [0, 1025, 477, 365, 337, 82];
 const PIECE_VALUE_EG: [u32; 6] = [0, 936, 512, 297, 281, 94];
 
+const WHITE_SQUARES: BitBoard = BitBoard(0x55AA55AA55AA55AA);
+const BLACK_SQUARES: BitBoard = BitBoard(0xAA55AA55AA55AA55);
+
+pub const PIECE_VALUE: [[u32; 6]; 2] = [PIECE_VALUE_MG, PIECE_VALUE_EG];
+const CENTER_MANHATTAN_DISTANCE: [i32; 64] = [6,5,4,3,3,4,5,6,5,4,3,2,2,3,4,5,4,3,2,1,1,2,3,4,3,2,1,0,0,1,2,3,3,2,1,0,0,1,2,3,4,3,2,1,1,2,3,4,5,4,3,2,2,3,4,5,6,5,4,3,3,4,5,6];
+
+const BLACK_CORNER_KING_DISTANCE: [i32; 64] = [
+    0,1,2,3,4,5,6,7,
+    1,1,2,3,4,5,6,6,
+    2,2,2,3,4,5,5,5,
+    3,3,3,3,4,4,4,4,
+    4,4,4,4,3,3,3,3,
+    5,5,5,4,3,2,2,2,
+    6,6,5,4,3,2,1,1,
+    7,6,5,4,3,2,1,0];
+
+const _BLACK_CORNER_MANHATTAN_DISTANCE: [i32; 64] = [
+    0,1,2,3,4,5,6,7,
+    1,2,3,4,5,6,7,6,
+    2,3,4,5,6,7,6,5,
+    3,4,5,6,7,6,5,4,
+    4,5,6,7,6,5,4,3,
+    5,6,7,6,5,4,3,2,
+    6,7,6,5,4,3,2,1,
+    7,6,5,4,3,2,1,0];
+
+//Adjustable constants start
+
+
 const PIECE_VALUE_MG_EG_TRANSITION_END: u32 = ((PIECE_VALUE_MG[1] + PIECE_VALUE_MG[2] + PIECE_VALUE_MG[3] + PIECE_VALUE_MG[4]) / 4 * 3 + PIECE_VALUE_MG[5] * 5) * 2;
 const PIECE_VALUE_MG_EG_TRANSITION_START: u32 = ((PIECE_VALUE_MG[1] + PIECE_VALUE_MG[2] + PIECE_VALUE_MG[3] + PIECE_VALUE_MG[4]) / 4 * 6 + PIECE_VALUE_EG[5] * 5) * 2;
 
-pub const PIECE_VALUE: [[u32; 6]; 2] = [PIECE_VALUE_MG, PIECE_VALUE_EG];
-const CENTER_MANHATTAN_DISTANCE: [i16; 64] = [6,5,4,3,3,4,5,6,5,4,3,2,2,3,4,5,4,3,2,1,1,2,3,4,3,2,1,0,0,1,2,3,3,2,1,0,0,1,2,3,4,3,2,1,1,2,3,4,5,4,3,2,2,3,4,5,6,5,4,3,3,4,5,6];
+const KING_TO_CORNER_MATE_WEIGHT: i32 = 100;
+
+
+//Adjustable constants end
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Evaluation {
@@ -142,22 +173,7 @@ pub fn eval_position_direct(board: &Board) -> Evaluation {
     let mut eval = material_eval + pst_eval;
 
     if is_endgame {
-        //If we are a rook up, push the king into the corner.
-        //TODO if we have a bishop use the correct corner
-        let (king_to_mate, factor) = if board.eval_info[GamePhase::Endgame].material[White] == PIECE_VALUE_EG[King] && board.eval_info[GamePhase::Endgame].material[Black] >= PIECE_VALUE_EG[Rook] {
-            (board.piece_bbs[White][King], -1)
-        }
-        else if board.eval_info[GamePhase::Endgame].material[Black] == PIECE_VALUE_EG[King] && board.eval_info[GamePhase::Endgame].material[White] >= PIECE_VALUE_EG[Rook] {
-            (board.piece_bbs[Black][King], 1)
-        } else {
-            (BitBoard::NONE, 0)
-        };
-        if king_to_mate != 0 {
-            let distance_to_center = CENTER_MANHATTAN_DISTANCE[king_to_mate.0.trailing_zeros() as usize];
-            let king_to_corner_eval = distance_to_center * factor * 100;
-            eval += king_to_corner_eval as f32;
-        }
-
+        eval += eval_king_mate_target(&board);
     }
 
     if board.active_player == Black {
@@ -165,6 +181,37 @@ pub fn eval_position_direct(board: &Board) -> Evaluation {
     }
     Estimate(eval)
 
+}
+
+fn eval_king_mate_target(board: &Board) -> f32 {
+    let eg_mat_white = board.eval_info[GamePhase::Endgame].material[White];
+    let eg_mat_black = board.eval_info[GamePhase::Endgame].material[Black];
+    let (king_to_mate, factor, white_bishop_diff) = if eg_mat_white == PIECE_VALUE_EG[King] && eg_mat_black >= PIECE_VALUE_EG[Rook] {
+        let bishops = board.piece_bbs[Black][Bishop];
+        let white_b = (bishops & WHITE_SQUARES).0.count_ones() as i32;
+        let black_b = (bishops & BLACK_SQUARES).0.count_ones() as i32;
+        (board.piece_bbs[White][King], -1, white_b - black_b)
+    }
+    else if eg_mat_black == PIECE_VALUE_EG[King] && eg_mat_white >= PIECE_VALUE_EG[Rook] {
+        let bishops = board.piece_bbs[White][Bishop];
+        let white_b = (bishops & WHITE_SQUARES).0.count_ones() as i32;
+        let black_b = (bishops & BLACK_SQUARES).0.count_ones() as i32;
+        (board.piece_bbs[Black][King], 1, white_b - black_b)
+    } else {
+        (BitBoard::NONE, 0, 0)
+    };
+    if king_to_mate == 0 {
+        return 0_f32;
+    }
+    let king_square = Square(king_to_mate.0.trailing_zeros() as u8);
+    let king_corner_eval = match white_bishop_diff {
+        w if w > 0 => BLACK_CORNER_KING_DISTANCE[king_square.0 as usize],
+        w if w < 0 => BLACK_CORNER_KING_DISTANCE[king_square.flip().0 as usize],
+        _ => 0
+    } * 2 + CENTER_MANHATTAN_DISTANCE[king_square.0 as usize];
+
+    let king_to_corner_eval = king_corner_eval * factor * KING_TO_CORNER_MATE_WEIGHT;
+    king_to_corner_eval as f32
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -255,6 +302,7 @@ impl AlphaBetaSearch {
         }
 
         if depth == 0 {
+            // return MoveSuggestion(eval_position_direct(&board), None);
             return AlphaBetaSearch::eval_quiescence(board, alpha, beta, &mut meta);
         }
 
@@ -314,7 +362,7 @@ impl AlphaBetaSearch {
         }
 
         meta.node_count += 1;
-        if board.halfmove_clock >= 50 {
+        if board.is_stalemate() {
             return MoveSuggestion(Stalemate, None);
         }
 
