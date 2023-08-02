@@ -19,12 +19,18 @@ pub fn eval_iter_deep(mut board: &mut Board, end_time: u128, hash_size: usize, c
         }
     }
     let mut best_move: Option<MoveSuggestion> = None;
+    let mut previous_eval: Option<Evaluation> = None;
     let mut previous_elapsed = 0_u128;
     let mut tt_table = TranspositionTable::<AlphaBetaData>::new(hash_size);
     for depth in START_DEPTH..MAX_DEPTH {
+        println!("Evaluating at depth {}", depth);
         let start = Instant::now();
         let mut meta = MinMaxMetadata::new(end_time, &mut tt_table);
-        let move_at_depth = AlphaBetaSearch::find_move(&mut board, depth, &mut meta);
+        let move_at_depth = if let Some(eval) = previous_eval {
+            AlphaBetaSearch::find_move_aspiration_window(&mut board, depth, &mut meta, eval)
+        } else {
+            AlphaBetaSearch::find_move(&mut board, depth, &mut meta)
+        };
         let elapsed_time = start.elapsed().as_millis();
         if meta.should_terminate {
             if !quiet {
@@ -33,23 +39,25 @@ pub fn eval_iter_deep(mut board: &mut Board, end_time: u128, hash_size: usize, c
             break;
         } else {
             best_move = Some(move_at_depth);
+            previous_eval = Some(move_at_depth.0);
             if !quiet {
                 println!("Completed depth {} with result {:?}, nodes: {} in {}ms", depth, move_at_depth, meta.node_count, elapsed_time);
             }
         }
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+        let time_left = end_time - current_time;
         if previous_elapsed == 0 {
+            println!("Time left: {}. Insufficient data for depth {} duration estimate", time_left, depth + 1);
             previous_elapsed = elapsed_time;
         }
         else {
             let expected_duration_next = elapsed_time * (elapsed_time / previous_elapsed);
-            let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
             if current_time > end_time {
                 break;
             }
-            let time_left = end_time - current_time;
             previous_elapsed = elapsed_time;
             if !quiet {
-                println!("Time left: {}. Expected for next iteration: {}", time_left, expected_duration_next);
+                println!("Time left: {}. Expected duration for depth {}: {}", time_left, depth + 1, expected_duration_next);
             }
             if conserve_time && (current_time > end_time || expected_duration_next > time_left) {
                 if !quiet {

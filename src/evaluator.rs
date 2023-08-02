@@ -259,6 +259,37 @@ pub struct AlphaBetaSearch;
 
 impl AlphaBetaSearch {
 
+    const INITIAL_ASPIRATION_WINDOW_SIZE: f32 = 25_f32;
+
+    pub fn find_move_aspiration_window(mut board: &mut Board, depth: u8, mut meta: &mut MinMaxMetadata, previous_eval: Evaluation) -> MoveSuggestion {
+        let numeric_eval = match previous_eval {
+            Estimate(x) => x,
+            Stalemate => 0_f32,
+            _ => return AlphaBetaSearch::find_move(&mut board, depth, &mut meta)
+        };
+        let mut alpha_delta = -AlphaBetaSearch::INITIAL_ASPIRATION_WINDOW_SIZE;
+        let mut beta_delta = AlphaBetaSearch::INITIAL_ASPIRATION_WINDOW_SIZE;
+        for _ in 0..10 {
+            if meta.should_terminate {
+                break;
+            }
+            let alpha = Estimate(numeric_eval + alpha_delta);
+            let beta = Estimate(numeric_eval + beta_delta);
+            println!("\tTrying window ({}, {})", alpha, beta);
+            let result = AlphaBetaSearch::eval_negamax(depth, board, alpha, beta, &mut meta);
+            if result.0 <= alpha {
+                alpha_delta *= 2_f32;
+                continue;
+            }
+            if result.0 >= beta {
+                beta_delta *= 2_f32;
+                continue;
+            }
+            return result;
+        }
+        return AlphaBetaSearch::find_move(&mut board, depth, &mut meta);
+    }
+
     pub fn find_move(board: &mut Board, depth: u8, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
         let alpha = MIN_EVAL;
         let beta = MAX_EVAL;
