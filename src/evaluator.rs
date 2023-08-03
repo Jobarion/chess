@@ -217,9 +217,9 @@ fn eval_king_mate_target(board: &Board) -> f32 {
 #[derive(Debug, Copy, Clone)]
 pub struct MoveSuggestion(pub Evaluation, pub Option<Move>);
 
-const MAX_DEPTH: usize = 128;
+const MAX_DEPTH: u8 = 128;
 const KILLER_MOVE_SLOTS: usize = 2;
-type KillerMoves = [[Option<Move>; KILLER_MOVE_SLOTS]; MAX_DEPTH];
+type KillerMoves = [[Option<Move>; KILLER_MOVE_SLOTS]; MAX_DEPTH as usize];
 type ScoredMove = (Move, u32);
 
 pub struct MinMaxMetadata<'a> {
@@ -235,7 +235,7 @@ pub struct MinMaxMetadata<'a> {
 impl MinMaxMetadata<'_> {
     pub fn new(max_time: u128, tt_table: &mut TranspositionTable<AlphaBetaData>) -> MinMaxMetadata<'_> {
         MinMaxMetadata {
-            killer_moves: [[None; KILLER_MOVE_SLOTS]; MAX_DEPTH],
+            killer_moves: [[None; KILLER_MOVE_SLOTS]; MAX_DEPTH as usize],
             ply: 0,
             node_count: 0,
             path: vec![],
@@ -296,7 +296,7 @@ impl AlphaBetaSearch {
         AlphaBetaSearch::eval_negamax(depth, board, alpha, beta, &mut meta)
     }
 
-    fn eval_negamax(depth: u8, board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
+    fn eval_negamax(mut depth: u8, board: &mut Board, mut alpha: Evaluation, mut beta: Evaluation, mut meta: &mut MinMaxMetadata) -> MoveSuggestion {
         meta.check_termination();
         if meta.should_terminate {
             return MoveSuggestion(MIN_EVAL, None)
@@ -309,7 +309,8 @@ impl AlphaBetaSearch {
 
         let alpha_original = alpha;
 
-        if let Some(tt_entry) = meta.tt_table.retrieve(board.zobrist_key) {
+        let tt_entry_opt = meta.tt_table.retrieve(board.zobrist_key);
+        if let Some(tt_entry) = tt_entry_opt {
             let tt_eval = match tt_entry.eval {
                 Losing(x) => Losing(x + meta.ply - tt_entry.ply),
                 Winning(x) => Losing(x + meta.ply - tt_entry.ply),
@@ -332,15 +333,20 @@ impl AlphaBetaSearch {
             }
         }
 
-        if depth == 0 {
-            // return MoveSuggestion(eval_position_direct(&board), None);
+        if depth == 0 || meta.ply == MAX_DEPTH {
             return AlphaBetaSearch::eval_quiescence(board, alpha, beta, &mut meta);
         }
 
         let mut max_eval = MIN_EVAL;
         let mut max_suggestion = None;
         let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves(MoveType::All);
-        let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta);
+
+        // //Extend depth if there is only one legal move
+        // if legal_moves.len() == 1 {
+        //     depth += 1;
+        // }
+
+        let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta, tt_entry_opt.map(|x| x.best_move));
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
 
         for (m, _) in legal_moves_scored {
@@ -406,9 +412,13 @@ impl AlphaBetaSearch {
             alpha = stand_pat;
         }
 
+        if meta.ply >= MAX_DEPTH {
+            return MoveSuggestion(stand_pat, None);
+        }
+
         let mut max_suggestion = None;
         let LegalMoveData { legal_moves, king_danger_mask, .. } = board.legal_moves(MoveType::CaptureCheckEvade);
-        let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta);
+        let mut legal_moves_scored = AlphaBetaSearch::score_moves(legal_moves, &board, meta, None);
         legal_moves_scored.sort_by(|m1, m2| m2.1.cmp(&m1.1));
 
         for (m, _) in legal_moves_scored {
@@ -450,16 +460,22 @@ impl AlphaBetaSearch {
 
 
     const KILLER_OFFSET: u32 = 6; //MVV-LVA is 6 bits wide
-    //const _next_OFFSET: u32 = 7; //killer move is 1 bit wide
+    const HASH_OFFSET: u32 = 7; //killer move is 1 bit wide
+    // const _next_OFFSET: u32 = 8; //hash move is 1 bit wide
 
-    fn score_moves(move_vec: Vec<Move>, board: &Board, meta: &MinMaxMetadata) -> Vec<ScoredMove> {
+    fn score_moves(move_vec: Vec<Move>, board: &Board, meta: &MinMaxMetadata, tt_move: Option<Move>) -> Vec<ScoredMove> {
         move_vec.into_iter()
             .map(|m| {
+                if let Some(tt_move) = tt_move {
+                    if m == tt_move {
+                        return (m, 1 << AlphaBetaSearch::HASH_OFFSET);
+                    }
+                }
                 //max is 55 (assuming no king captures)
                 let mvv_lva_score = match m {
-                    Move{move_type: MoveAction::EnPassant, ..} => AlphaBetaSearch::mvv_lva_score(PieceType::Pawn, PieceType::Pawn),
+                    Move{move_type: MoveAction::EnPassant, ..} => AlphaBetaSearch::mvv_lva_score(Pawn, Pawn),
                     Move{move_type: MoveAction::Capture(captured), from, ..} => AlphaBetaSearch::mvv_lva_score(captured, board.board[from].unwrap().piece_type),
-                    Move{move_type: MoveAction::Promotion(_, Some(captured)), ..} => AlphaBetaSearch::mvv_lva_score(captured, PieceType::Pawn),
+                    Move{move_type: MoveAction::Promotion(_, Some(captured)), ..} => AlphaBetaSearch::mvv_lva_score(captured, Pawn),
                     _ => 0
                 };
                 let killer_score = match m {
@@ -481,8 +497,6 @@ impl AlphaBetaSearch {
                     },
                     _ => 0
                 };
-                // let killer_score = 0;
-                // let mvv_lva_score = 0;
                 let score = mvv_lva_score | killer_score << AlphaBetaSearch::KILLER_OFFSET;
                 (m, score)
             })
